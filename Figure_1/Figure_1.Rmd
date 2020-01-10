@@ -1,0 +1,214 @@
+---
+title: "Preprint: Bravo González-Blas et al., 2019; Figure 1"
+author: "Carmen Bravo González-Blas"
+vignette: >
+  %\VignetteIndexEntry{Preprint: Bravo González-Blas et al., 2019, message=FALSE}
+  %\VignetteEngine{knitr::rmarkdown, message=FALSE}
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+    number_sections: false
+  pdf_document:
+    toc: yes
+  html_notebook:
+    toc: yes
+---
+
+## Read count matrix
+
+The count matrix can be downloaded from GEO (GSE141586).
+
+```{r, eval=FALSE, message=FALSE}
+library(data.table)
+count.matrix <- suppressWarnings(data.frame(fread('Figure_1/Input_data/GEO_data/10X_SCRNASEQ_WT_EA_AGGR.tsv', sep='\t', verbose=F), row.names=1))
+```
+
+## Dimensionality reduction and cluster annotation - Figure 1b
+
+```{r, eval=FALSE, message=FALSE}
+library(Seurat)
+# Initialize object
+EAdisc <- CreateSeuratObject(counts = count.matrix, min.cells = 1, min.features = 1, project = "EAdisc")
+# Normalize data
+EAdisc <- NormalizeData(object = EAdisc, normalization.method = "LogNormalize", scale.factor = 1e4)
+# Find variable features
+EAdisc <- FindVariableFeatures(object = EAdisc, selection.method = 'mean.var.plot', mean.cutoff = c(0.0125, 3), dispersion.cutoff = c(0.5, Inf))
+# Scale data
+EAdisc <- ScaleData(object = EAdisc, features = rownames(x = EAdisc), vars.to.regress = c("nCount_RNA"))
+# Run PCA
+EAdisc <- RunPCA(object = EAdisc, features = VariableFeatures(object = EAdisc), verbose = FALSE, npcs=150)
+# Select number of PCs
+source("Figure_1/aux_scripts/Seurat_Utils.R")
+data.use <- PrepDR(object = EAdisc, genes.use = VariableFeatures(object = EAdisc), use.imputed = F, assay.type = "RNA")
+nPC <- PCA_estimate_nPC(data.use, whereto="Figure_1/Processed_data/Seurat/nPC_selection.Rds", to.nPC = 150)
+# Find clusters
+EAdisc <- FindNeighbors(object = EAdisc, dims = 1:nPC, k.param=30)
+EAdisc <- FindClusters(object = EAdisc, resolution = 1.2)
+# Generate t-SNE
+EAdisc <- RunTSNE(object = EAdisc, dims = 1:nPC)
+# Rename IDs
+new.cluster.ids <- c('AMF_prog_prec', 'PM_medial', 'Hemocytes', 'Antenna_A3_Arista', 'PMF_PR_Late/CC', 'Head_vertex', 'PMF_PR_Early', 'PMF_Interommatidial', 'Antenna_A1', 'PM_lateral', 'Glia', 'Antenna_A2', 'Brain_A', 'MF_Morphogenetic_Furrow', 'Brain_B', 'Brain_C', 'twi_cells')
+names(x = new.cluster.ids) <- levels(x = EAdisc)
+EAdisc <- RenameIdents(object = EAdisc, new.cluster.ids)
+# Set colors
+colors <- c("#FFC29C", "#01E6B3", "#01FAF7", "#F98E19", "#02B4E2", "#6CA7FF", "#01D3F8", "#67EAFF", "#85BC05", "#BB90FE", "#E5D006", "#59F889", "#FD79A3", "#9EF75F", "#5CB8F7", "#B5DEFF", "#F56DE0")
+names(colors) <- levels(x = EAdisc)
+saveRDS(colors, file='Figure_1/Processed_data/Seurat/10X_ColVars.Rds')
+# Save object
+saveRDS(EAdisc, file='Figure_1/Processed_data/Seurat/10X_SeuratObject.Rds')
+```
+
+```{r, message=FALSE}
+#Load
+colors <- readRDS('Figure_1/Processed_data/Seurat/10X_ColVars.Rds')
+EAdisc <- readRDS('Figure_1/Processed_data/Seurat/10X_SeuratObject.Rds')
+#Plot
+library(Seurat)
+DimPlot(object = EAdisc, reduction = 'tsne', cols=colors, label=TRUE, label.size = 3.5, repel=TRUE) + NoLegend() + NoAxes()
+```
+
+## Plot marker genes with RGB encoding - Figure 1c
+
+```{r, message=FALSE}
+source("Figure_1/aux_scripts/Seurat_Utils.R")
+par(mfrow=c(2,3))
+RGBColoring(EAdisc, 'tsne', c('toy', 'Dfd', 'oc'))
+RGBColoring(EAdisc, 'tsne', c('Optix', 'ato', 'gl'))
+RGBColoring(EAdisc, 'tsne', c('Gasp', 'dpp', 'onecut'))
+RGBColoring(EAdisc, 'tsne', c('sens', 'svp', 'sv'))
+RGBColoring(EAdisc, 'tsne', c('ct', 'Dll', 'ss'))
+RGBColoring(EAdisc, 'tsne', c('Oli', 'twi', 'pnr'))
+```
+
+## Label transfering from Ariss et al (2018) - Figure 1d
+
+The processed data matrix and annotation from Ariss et al (2018) can be retrieved from the loom file at: http://scope.aertslab.org/#/Bravo_et_al_EyeAntennalDisc (Ariss - WT 11416 cells / EAD_Ariss_WT_Seurat_SCENIC)
+
+```{r, eval=FALSE, message=FALSE}
+# Get eye disc data and filter
+library(SCopeLoomR)
+loom <- open_loom("Figure_1/Input_data/SCope_data/EAD_Ariss_WT_Seurat_SCENIC.loom")
+count.matrix <- get_dgem(loom)
+cell.data <- get_cellAnnotation(loom)[,2,drop=FALSE]
+EyeDisc_Ariss_integration <- CreateSeuratObject(counts = count.matrix, min.cells = 3, min.features = 1, project = "Frolov - WT", meta.data=cell.data)
+EyeDisc_Ariss_integration <- subset(x = EyeDisc_Ariss_integration, nCount_RNA > 1000 & nFeature_RNA > 500)
+rm(loom)
+# Remove brain cells for integration
+EAdisc_integration <- EAdisc
+EAdisc_integration <- subset(x = EAdisc, idents = c("Brain_A","Brain_B","Brain_C"),invert = TRUE)
+```
+
+```{r, eval=FALSE, message=FALSE}
+# Normalize and find variable features in each set
+EyeDisc_Ariss_integration <-NormalizeData(object = EyeDisc_Ariss_integration, verbose = FALSE)
+EyeDisc_Ariss_integration <- FindVariableFeatures(object = EyeDisc_Ariss_integration, selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+EAdisc_integration <-NormalizeData(object = EAdisc_integration, verbose = FALSE)
+EAdisc_integration <- FindVariableFeatures(object = EAdisc_integration, selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+# Determine anchors and transfer labels
+EAdisc.anchors <- FindTransferAnchors(reference = EyeDisc_Ariss_integration, query = EAdisc_integration, 
+    dims = 1:30)
+Transfer_labels <- TransferData(anchorset = EAdisc.anchors, refdata = EyeDisc_Ariss_integration$Ariss.labels, 
+    dims = 1:30)
+# Add transferred labels as metadata
+Ariss_labels <- as.vector(unlist(EAdisc@active.ident))
+names(Ariss_labels) <- names(EAdisc@active.ident)
+Ariss_labels[rownames(Transfer_labels)] <- Transfer_labels[,1]
+Ariss_labels[grep('Brain', Ariss_labels)] <- 'Brain (Not transferred)'
+EAdisc <- AddMetaData(object = EAdisc, metadata = as.data.frame(Ariss_labels))
+#Set colors
+colors <- c("#59F889", "#FD79A3", "#BB90FE", "#85BC05", "#01D3F8", "#01FAF7", "#67EAFF", "#02B4E2", "#9EF75F", "#6CA7FF", "#000000", "#996515", "#FFC29C", "#A020F0", "#01E6B3", "#E5D006")
+names(colors) <- levels(x = EAdisc@meta.data$Ariss_labels)
+saveRDS(colors, file='Figure_1/Processed_data/Seurat/ArissTo10X_ColVars.Rds')
+# Save object
+saveRDS(EAdisc, file='Figure_1/Processed_data/Seurat/10X_SeuratObject.Rds')
+```
+
+```{r, message=FALSE}
+#Remove other cells for visualization
+cells <- rownames(EAdisc@meta.data[which(EAdisc@meta.data$Ariss_labels != 'other'),])
+#Load
+colors <- readRDS('Figure_1/Processed_data/Seurat/ArissTo10X_ColVars.Rds')
+EAdisc <- readRDS('Figure_1/Processed_data/Seurat/10X_SeuratObject.Rds')
+#Plot
+DimPlot(object = EAdisc, reduction = 'tsne', group.by='Ariss_labels', cells=cells, cols=colors, label=TRUE, label.size = 3.5) + NoLegend() + NoAxes()
+```
+
+## AUC Regulon enrichment heatmap - Figure 1e
+
+The processed regulons and AUC scores can be retrieved from the loom file at: http://scope.aertslab.org/#/Bravo_et_al_EyeAntennalDisc (scRNA-seq - 3531 cells / EAD_scRNAseq_WT_Seurat_SCENIC). Details on how pySCENIC was run are attached in a python notebook.
+
+```{r, eval=FALSE, message=FALSE}
+# Load SCENIC AUC matrix
+library(SCopeLoomR)
+library(SCENIC)
+loom <- open_loom("Figure_1/Input_data/SCope_data/EAD_scRNAseq_SCENICandSeurat.loom")
+regulonsAUC <- t(getAUC(get_regulonsAuc(loom)))
+rm(loom)
+# Remove small regulons
+lengths <- sapply(strsplit(colnames(regulonsAUC), split = " "), "[", 2)
+lengths <- sapply(strsplit(lengths, split = "\\("), "[", 2)
+lengths <- as.numeric(gsub('g)', '', lengths))
+regulonsAUC <- regulonsAUC[,-which(lengths < 5)]
+colnames(regulonsAUC) <- gsub('ChIPseq', 'extended', colnames(regulonsAUC))
+```
+
+```{r, eval=FALSE, message=FALSE}
+# Order cells
+cells <- colnames(x = EAdisc)
+object <- suppressMessages(expr = StashIdent(object = EAdisc, save.name = "ident"))
+group.by <- "ident"
+groups.use <- object[[group.by]][cells, , drop = FALSE]
+group.use <- groups.use[, 1, drop = TRUE]
+group.use <- factor(x = group.use)
+names(x = group.use) <- cells
+group.use <- group.use[c(which(group.use =="PM_medial"), which(group.use =="PM_lateral"), which(group.use =="Head_vertex"), which(group.use =="Antenna_A1"), which(group.use =="Antenna_A2"), which(group.use =="Antenna_A3_Arista"), which(group.use =="AMF_prog_prec"), which(group.use =="MF_Morphogenetic_Furrow"), which(group.use =="PMF_PR_Early"), which(group.use =="PMF_PR_Late/CC"), which(group.use =="PMF_Interommatidial"),which(group.use == "Glia"), which(group.use == "twi_cells"), which(group.use == "Hemocytes"), which(group.use == "Brain_A"), which(group.use == "Brain_B"),  which(group.use == "Brain_C"))]
+order <- names(x = group.use)
+# Calculate RSS scores
+source("Figure_1/aux_scripts/SCENIC_Utils.R")
+rss <- calcRSS(t(regulonsAUC), EAdisc@active.ident)
+rss <- rss[onlyNonDuplicatedExtended(rownames(rss)),]
+rss <- rss[,unique(unlist(as.vector(group.use)))[1:14]]
+# To plot RSS per cell type: plotRSS(rss, "Cell type", 10)
+selected_thresholds <- c(5, 4, 1, 1, 3, 5, 3, 5, 7, 9, 4, 5, 3, 17)
+rss <- rbind(rss, selected_thresholds) 
+# Select regulons
+selRegulons <- unique(unlist(as.vector(apply(rss, 2, function(x) {
+  newx <- sort(x[1:nrow(rss)-1], decreasing=T)
+  index <- x[nrow(rss)]
+  c(names(newx[1:index]))
+, message=FALSE})))); length(selRegulons)
+selRegulons <- selRegulons[!duplicated(selRegulons)]
+selRegulons <- c(selRegulons[1:37], rownames(rss)[grep('pros', rownames(rss))], selRegulons[38:length(selRegulons)])
+selRegulons <- c("grh (1188g)", selRegulons)
+# Remove brain cells and scale AUC
+out <- which(EAdisc@active.ident %in% c("Brain_A", "Brain_B", "Brain_C"))
+regulonsAUC <- regulonsAUC[-out,]
+range01 <- function(x){(x-min(x))/(max(x)-min(x)), message=FALSE}
+regulonsAUC <- apply(regulonsAUC, 1, range01)
+regulonsAUC <- regulonsAUC[selRegulons,]
+rownames(regulonsAUC) <-  gsub('_extended', '*', rownames(regulonsAUC))
+# Prepare heatmap
+library(ComplexHeatmap)
+order <- order[-which(order %in% names(group.use[c(which(group.use == "Brain_A"), which(group.use == "Brain_B"),  which(group.use == "Brain_C"))]))]
+mat <- regulonsAUC[,order]
+colorPal <- grDevices::colorRampPalette(c('floralwhite', 'red', 'darkred'))
+cellColor <- setNames(colors[EAdisc@active.ident], names(EAdisc@active.ident))
+cellColor <- cellColor[order]
+colVars <- list()
+colors <- readRDS('Figure_1/Processed_data/Seurat/10X_ColVars.Rds')
+colVars[['Cell_type']] <- colors
+celltype <- as.data.frame(EAdisc@active.ident[order])
+colnames(celltype) <- 'Cell_type'
+annotation <- ComplexHeatmap::HeatmapAnnotation(df = celltype, col = colVars, which='column', width = unit(5, "mm"))
+heatmap <- ComplexHeatmap::Heatmap(data.matrix(mat), col=colorPal(20), cluster_columns = FALSE, cluster_rows = FALSE, show_row_dend = FALSE, show_column_names=FALSE, show_row_names = TRUE, top_annotation = annotation, name='Standarized AUC', row_names_gp = gpar(fontsize = 5), heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(5, "cm"), title_position='topcenter'), column_title_gp = gpar(fontface = 'bold'))
+saveRDS(heatmap, file='Figure_1/Processed_data/SCENIC/AUC_heatmap.RDS')
+```
+
+```{r, message=FALSE}
+# Make heatmap
+heatmap <- readRDS('Figure_1/Processed_data/SCENIC/AUC_heatmap.RDS')
+library(ComplexHeatmap)
+ComplexHeatmap::draw(heatmap, heatmap_legend_side = "bottom", annotation_legend_side = "right")
+```
+ 
