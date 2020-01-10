@@ -17,7 +17,7 @@ output:
 
 ## Read count matrix
 
-The count matrix can be downloaded from GEO (GSE141586).
+The count matrix can be downloaded from GEO (GSE141589).
 
 ```{r, eval=FALSE, message=FALSE}
 library(data.table)
