@@ -1,0 +1,299 @@
+---
+title: "Preprint: Bravo González-Blas et al., 2019; Figure 2"
+author: "Carmen Bravo González-Blas"
+vignette: >
+  %\VignetteIndexEntry{Preprint: Bravo González-Blas et al., 2019, message=FALSE}
+  %\VignetteEngine{knitr::rmarkdown, message=FALSE}
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+    number_sections: false
+  pdf_document:
+    toc: yes
+  html_notebook:
+    toc: yes
+---
+
+# Read count matrix
+
+The count matrix can be downloaded from GEO (GSE141586).
+
+```{r, eval=FALSE, message=FALSE}
+library(data.table)
+count.matrix <- suppressWarnings(data.frame(fread('Figure_2/Input_data/GEO_data/10X_SCATACSEQ_WT_EA_CTXREGIONS.tsv', sep='\t', verbose=F), row.names=1))
+```
+
+# Dimensionality reduction and cluster annotation - Figure 2c
+
+```{r, eval=FALSE, message=FALSE}
+library(cisTopic) 
+# Initialize object
+cisTopicObject <- createcisTopicObject(count.matrix, project.name='EAdisc')
+# Run models (updated to cisTopic v3)
+cisTopicObject <- runCGSModels(cisTopicObject, topic=c(2, 10, 20, 30:50, 60, 70, 80, 90, 100), seed=987, nCores=10, burnin = 250, iterations = 500)
+# Select model
+cisTopicObject <- selectModel(cisTopicObject, select=49, keepModels = FALSE)
+# Remove data slots
+cisTopicObject@count.matrix <- NULL
+cisTopicObject@binary.count.matrix <- NULL
+# Add run as metadata
+run <- as.data.frame(as.factor(sapply(strsplit(cisTopicObject@cell.names, split = "[.]"), "[", 2)))
+rownames(run) <- cisTopicObject@cell.names
+cisTopicObject <- addCellMetadata(cisTopicObject, run)
+# tSNE
+cisTopicObject <- runtSNE(cisTopicObject, target='cell', perplexity=100)
+# Louvain clustering (with Seurat 2.3.4)
+devtools::install_version("Seurat", version = "2.3.4", repos = "http://cran.us.r-project.org")
+library(Seurat)
+topicCell <- modelMatSelection(cisTopicObject, 'cell', 'Z-score') 
+seuratObj <- CreateSeuratObject(raw.data = topicCell, min.cells = 0, min.genes = 0, project = "cisTopic_cluster")
+seuratObj  <- FindClusters(seuratObj, genes.use=rownames(topicCell), resolution = 1.2)
+# Update to Seurat v3
+detach("package:Seurat", unload=TRUE)
+remove.packages("Seurat", lib="~/R/x86_64-generic-linux-gnu-library/3.4")
+install.packages('Seurat')
+library(Seurat)
+seuratObj <- UpdateSeuratObject(seuratObj)
+# Annotate
+new.cluster.ids <- c('PMF_Interommatidial', 'AMF_Prog', 'Antenna_A3_Arista', 'Antenna_A1', 'MF_Morphogenetic_Furrow', 'PMF_Interommatidial_Late', 'Antenna_A2a', 'Peripodial_membrane_medial', 'AMF_Prec', 'Antenna_A2b', 'Head_vertex', 'Peripodial_membrane_lateral', 'PMF_PR_Early', 'PMF_PR_Late/CC', 'Unknown_B', 'Glia', 'Unknown_A', 'Brain_A', 'Brain_B', 'twi_cells', 'Hemocytes', 'Unknown_C')
+# Set labels on the Seurat object
+names(x = new.cluster.ids) <- levels(x = seuratObj)
+seuratObj <- RenameIdents(object = seuratObj, new.cluster.ids)
+# Add cisTopic coordinates
+DimReduc <- setClass(Class = 'DimReduc', slots = c(cell.embeddings = 'matrix', feature.loadings = 'matrix', feature.loadings.projected = 'matrix', assay.used = 'character', global = 'logical', stdev = 'numeric',key = 'character', misc = 'list', jackstraw='ANY'))
+tsne_coords <- cisTopicObject@dr$cell$tSNE
+colnames(tsne_coords) <- c('tSNE_1', 'tSNE_2')
+seuratObj@reductions$tsne <- new('DimReduc', cell.embeddings=tsne_coords, assay.used ='RNA', key='tSNE_')
+# Create colVars
+colors <- c('#5CC1A4', '#9A52A0', '#77A0D4', '#99BE3F', '#D1992A', '#B4DCB8', '#F68C61', '#42B86E', '#FCC39E', '#A8D05A','#42C6EC', '#63BBD1', '#82D3EA', '#FFFF00', '#E3D022', '#D077AF', '#70CCD8', '#FD79A4', '#B5DEFF', '#FBC8FB', '#3CBC0D', '#FC9CF7')
+names(colors) <- c('Peripodial_membrane_medial', 'Peripodial_membrane_lateral', 'Head_vertex', 'Antenna_A1','Antenna_A2a','Antenna_A2b', 'Antenna_A3_Arista', 'AMF_Prec', 'AMF_Prog', 'MF_Morphogenetic_Furrow', 'PMF_PR_Early', 'PMF_PR_Late/CC', 'PMF_Interommatidial', 'PMF_Interommatidial_Late', 'Glia', 'twi_cells', 'Hemocytes', 'Brain_A', 'Brain_B', 'Unknown_A', 'Unknown_B', 'Unknown_C')   
+# Save objects
+saveRDS(colors, file='Figure_2/Processed_data/cisTopic/Cell_Type_ColVars.Rds')
+saveRDS(seuratObj, file='Figure_2/Processed_data/cisTopic/LouvainClustering.Rds')
+```
+
+```{r, message=FALSE}
+# Plot cell types on cisTopic tSNE
+library(Seurat)
+seuratObj <- readRDS('Figure_2/Processed_data/cisTopic/LouvainClustering.Rds')
+colors <- readRDS('Figure_2/Processed_data/cisTopic/Cell_Type_ColVars.Rds')
+suppressWarnings(DimPlot(object = seuratObj, reduction = 'tsne', cols=colors, label=TRUE, label.size = 2.5, repel=FALSE) + NoLegend() + NoAxes())
+```
+
+```{r, eval=FALSE, message=FALSE}
+# Add to cisTopic object
+celltypes <- as.data.frame(as.vector(unlist(seuratObj@active.ident)))
+colnames(celltypes) <- 'Cell_type'
+rownames(celltypes) <- colnames(topicCell)
+cisTopicObject <- addCellMetadata(cisTopicObject, celltypes)
+```
+
+# Topic-cell heatmap with selected topics - Figure 2d
+
+```{r, eval=FALSE, message=FALSE}
+# Select topic-cell matrix
+topicCell <- t(modelMatSelection(cisTopicObject, method='Probability', target='cell'))
+topicCell <- topicCell[,c(9,15,31,33,14,19,26,40,29,22,8,38,7,12,24,43,2,5,48)]
+colnames(topicCell) <- c('9_General', '15_General',  '31_PM_medial', '33_PM_lateral', '14_Head_vertex', '19_Antenna_A1', '26_Antenna_A2_a', '40_Antenna_A2_b', '29_JOP',  '22_Antenna_A3_Arista', '8_AMF_prog', '38_AMF_prec', '7_MF', '12_Early_PRs', '24_PMF_PR_Late/CC', '43_PMF_Interommatidial', '2_Glia', '5_twi_cells', '48_Hemocytes')
+rownames(topicCell) <- rownames(cisTopicObject@cell.data)
+# Sort cells by topic enrichment
+sub.topicCell <- topicCell[,3:ncol(topicCell)]
+maxs <- max.col(as.matrix(sub.topicCell))
+names(maxs) <- rownames(sub.topicCell)
+maxs <-  sort(maxs)
+order <- names(maxs)
+class <- as.vector(unlist(cisTopicObject@cell.data$Cell_type))
+names(class) <- cisTopicObject@cell.names
+order <- c(names(class)[which(class == 'Peripodial_membrane_medial')], names(class)[which(class == 'Peripodial_membrane_lateral')], names(class)[which(class == 'Head_vertex')], names(class)[which(class == 'Antenna_A1')], names(class)[which(class == 'Antenna_A2a')], names(class)[which(class == 'Antenna_A2b')], names(class)[which(class == 'Antenna_A3_Arista')], names(class)[which(class == 'AMF_Prec')], names(class)[which(class == 'AMF_Prog')], names(class)[which(class == 'MF_Morphogenetic_Furrow')], names(class)[which(class == 'PMF_PR_Early')], names(class)[which(class == 'PMF_PR_Late/CC')], names(class)[which(class == 'PMF_Interommatidial')], names(class)[which(class == 'PMF_Interommatidial_Late')], names(class)[which(class == 'Glia')], names(class)[which(class == 'twi_cells')], names(class)[which(class == 'Hemocytes')])
+class <- class[order]
+# Order JOP subpopulation based on JOP topic
+JOPs_names <- names(class)[which(class == 'Antenna_A2b')]
+JOPs <- sub.topicCell[JOPs_names, '29_JOP']
+names(JOPs) <- JOPs_names
+JOPs <- sort(JOPs)
+class[JOPs_names] <- class[names(JOPs)]
+order <- c(names(class)[which(class == 'Peripodial_membrane_medial')], names(class)[which(class == 'Peripodial_membrane_lateral')], names(class)[which(class == 'Head_vertex')], names(class)[which(class == 'Antenna_A1')], names(class)[which(class == 'Antenna_A2a')], names(JOPs), names(class)[which(class == 'Antenna_A3_Arista')], names(class)[which(class == 'AMF_Prec')], names(class)[which(class == 'AMF_Prog')], names(class)[which(class == 'MF_Morphogenetic_Furrow')], names(class)[which(class == 'PMF_PR_Early')], names(class)[which(class == 'PMF_PR_Late/CC')], names(class)[which(class == 'PMF_Interommatidial')], names(class)[which(class == 'PMF_Interommatidial_Late')], names(class)[which(class == 'Glia')], names(class)[which(class == 'twi_cells')], names(class)[which(class == 'Hemocytes')])
+class <- class[order]
+# Set colors
+topicCell <- t(topicCell[order,])
+colors <- readRDS('Figure_2/Processed_data/cisTopic/Cell_Type_ColVars.Rds')
+colors['PMF_Interommatidial_Late'] <- colors['PMF_Interommatidial']
+colVars <- list()
+colVars[['Celltype']] <- colors
+# Set annotation
+color_cells <- setNames(colors[class], names(class))
+class_fr <- as.data.frame(class)
+rownames(class_fr) <- names(class)
+colnames(class_fr) <- 'Celltype'
+# Heatmap
+library(ComplexHeatmap)
+colorPal <- grDevices::colorRampPalette(c('floralwhite', 'red', 'darkred'))
+annotation <- ComplexHeatmap::HeatmapAnnotation(df = class_fr, col = colVars, which='column', annotation_legend_param = list(labels_gp = gpar(fontsize = 5)))
+heatmap <- ComplexHeatmap::Heatmap(data.matrix(topicCell), col=colorPal(20), cluster_columns=FALSE, cluster_rows=FALSE, show_column_names=FALSE, show_row_names = TRUE, top_annotation = annotation, heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(6, "cm"), title_position='topcenter'), name = "Topic contribution per cell", row_names_gp = gpar(fontsize = 5))
+saveRDS(heatmap, file='Figure_2/Processed_data/cisTopic/topicCell_Heatmap.Rds')
+```
+
+```{r, message=FALSE}
+heatmap <- readRDS('Figure_2/Processed_data/cisTopic/topicCell_Heatmap.Rds')
+ComplexHeatmap::draw(heatmap, heatmap_legend_side = "bottom", annotation_legend_side = "right")
+```
+
+# Topic-cell and region topic dimensionaly reduction and motif enrichment- Figure 2e
+
+```{r, eval=FALSE, message=FALSE}
+# Enhancer tSNE
+cisTopicObject <- readRDS('Figure_2/Processed_data/cisTopic/cisTopicObject.Rds')
+cisTopicObject <- getRegionsScores(cisTopicObject, method='NormTop', scale=TRUE)
+cisTopicObject <- binarizecisTopics(cisTopicObject, thrP=0.985, plot=TRUE)
+cisTopicObject <- runtSNE(cisTopicObject, target='region', perplexity=200, check_duplicates=FALSE)
+```
+
+```{r, message=FALSE}
+# Topic enrichment in black-red scale
+suppressWarnings(source('Figure_2/aux_scripts/cisTopic_aux.R'))
+cisTopicObject <- readRDS('Figure_2/Processed_data/cisTopic/cisTopicObject.Rds')
+
+par(mfrow=c(1, 2))
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', topic=38) 
+SignatureEnrichmentBR(cisTopicObject, target='region', method='Probability', coordinates='tSNE', topic=38) 
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', topic=7)
+SignatureEnrichmentBR(cisTopicObject, target='region', method='Probability', coordinates='tSNE', topic=7)
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', topic=12)
+SignatureEnrichmentBR(cisTopicObject, target='region', method='Probability', coordinates='tSNE', topic=12)
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', topic=24)
+SignatureEnrichmentBR(cisTopicObject, target='region', method='Probability', coordinates='tSNE', topic=24)
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', topic=43)
+SignatureEnrichmentBR(cisTopicObject, target='region', method='Probability', coordinates='tSNE', topic=43)
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', topic=9)
+SignatureEnrichmentBR(cisTopicObject, target='region', method='Probability', coordinates='tSNE', topic=9)
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', topic=15)
+SignatureEnrichmentBR(cisTopicObject, target='region', method='Probability', coordinates='tSNE', topic=15)
+```
+ 
+```{r, eval=FALSE, message=FALSE}
+# Motif enrichment
+library(RcisTarget)
+cisTopicObject <- binarizedcisTopicsToCtx(cisTopicObject, genome='dm6')
+cisTopicObject <- scoredRegionsToCtx(cisTopicObject, genome='dm6')
+pathToFeather <- "/feather/dm6-regions-11species.withDL.mc9nr.feather"
+cisTopicObject <- topicsRcisTarget(cisTopicObject, genome='dm6', pathToFeather, reduced_database=FALSE, nesThreshold=3, rocthr=0.005, maxRank=20000, nCores=5)
+```
+
+```{r, message=FALSE}
+library(RcisTarget)
+cisTopicObject <- readRDS('Figure_2/Processed_data/cisTopic/cisTopicObject.Rds')
+Motif_enr <- data.table::rbindlist(cisTopicObject@binarized.RcisTarget)
+Motif_enr <- Motif_enr[,-c("enrichedRegions", 'logo'), with=FALSE]
+Motif_enr <- addLogo(Motif_enr, dbVersion='v9dl')
+DT::datatable(Motif_enr, escape = FALSE, filter="top", options=list(pageLength=5))
+```
+
+# Optix signature enrichment- Figure 2f
+
+```{r, eval=FALSE, message=FALSE}
+# Load differential peaks as called by MACS (with -q 0.01)
+cisTopicObject <- getSignaturesRegions(cisTopicObject,signatures='Figure_2/Input_data/Signatures/Optix+VSOptix-q01_peaks.narrowPeak', labels='Optix+VSOptix-')
+# Create AUCell Rankings based on the region-cell probabilities
+library(AUCell)
+pred.matrix <- predictiveDistribution(cisTopicObject)
+aucellRankings <- AUCell_buildRankings(pred.matrix, plot=FALSE, verbose=FALSE)
+# Determine enrichment
+cisTopicObject <- signatureCellEnrichment(cisTopicObject, aucellRankings, selected.signatures='Optix+VSOptix-', aucMaxRank = 0.1*nrow(aucellRankings), plot=FALSE)
+```
+
+```{r, eval=FALSE, message=FALSE}
+# To add -log10(Pval) from MACS
+source('Figure_2/aux_scripts/cisTopic_aux.R')
+cisTopicObject <- addMACSlogqval(cisTopicObject,signature='Figure_2/Input_data/Signatures/Optix+VSOptix-q01_peaks.narrowPeak', label='Optix+VSOptix-')
+```
+
+```{r, message=FALSE}
+# Plot
+cisTopicObject <- readRDS('Figure_2/Processed_data/cisTopic/cisTopicObject.Rds')
+par(mfrow=c(1,2))
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', signature='Optix+VSOptix-')
+SignatureEnrichmentBR(cisTopicObject, target='region', method='Probability', coordinates='tSNE', signature='-log(qval)_Optix+VSOptix-')
+```
+
+# Regulon enrichment - Figure 2g
+
+```{r, eval=FALSE, message=FALSE}
+# Take regions +-5kb around TSS or in gene's introns
+source('Figure_2/aux_scripts/cisTopic_aux.R')
+gene2regionFile <- 'Figure_2/Input_data/cisTarget/flybase-dmel-r6.02_symbol-limited-upstream5000-full-transcript_chr.updated_gene_symbols.bed'
+gene2region <- import.bed(con=gene2regionFile)
+geneNameSplit <- strsplit(gene2region@elementMetadata$name, split = "#", fixed = TRUE)
+geneNameClean <- sapply(geneNameSplit, function(x) x[[1]])
+gene2region@elementMetadata$name <- geneNameClean
+geneRegions <- intersectToRegionSet(cisTopicObject, gene2region, splitBy="name", minOverlap=0.4)
+missingGenes <- geneRegions[["missing"]]
+geneRegionSets <- geneRegions[which(!names(geneRegions) %in% "missing")]
+predMatSumByGene <- t(sapply(geneRegionSets, function(x) apply(pred.matrix[x,, drop=F], 2, sum)))
+colnames(predMatSumByGene) <- cisTopicObject@cell.names
+```
+
+The processed regulons and AUC scores can be retrieved from the loom file at: http://scope.aertslab.org/#/Bravo_et_al_EyeAntennalDisc (scRNA-seq - 3531 cells / EAD_scRNAseq_WT_Seurat_SCENIC). Details on how pySCENIC was run are attached in a python notebook (Figure_1).
+
+```{r, eval=FALSE, message=FALSE}
+# Load SCENIC AUC matrix
+library(SCopeLoomR)
+library(SCENIC)
+library(qdapTools)
+loom <- open_loom("Figure_1/Input_data/SCope_data/EAD_scRNAseq_SCENICandSeurat.loom")
+regulons <- get_regulons(loom)
+regulons <- counts2list(regulons, nm=rownames(regulons))
+rm(loom)
+# Regulon enrichment with AUCell
+cells_rankings <- AUCell_buildRankings(predMatSumByGene, plot=FALSE, verbose=FALSE)
+cells_AUC <- AUCell_calcAUC(regulons, cells_rankings, aucMaxRank=nrow(cells_rankings)*0.05)
+aucMatrix  <- t(getAUC(cells_AUC))
+colnames(aucMatrix) <- paste0('Regulon_', colnames(aucMatrix))
+# Add to cisTopicObject
+cisTopicObject <- addCellMetadata(cisTopicObject, aucMatrix)
+```
+
+```{r, message=FALSE}
+# Plot
+cisTopicObject <- readRDS('Figure_2/Processed_data/cisTopic/cisTopicObject.Rds')
+par(mfrow=c(1,2))
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', signature='Regulon_Optix')
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', signature='Regulon_ato')
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', signature='Regulon_so')
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', signature='Regulon_gl')
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', signature='Regulon_onecut')
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', signature='Regulon_grh')
+```
+
+# Label transfering from scRNA-seq data set
+
+```{r, eval=FALSE, message=FALSE}
+# Use Seurat v3
+library(Seurat)
+# Load RNA data
+EAdisc_RNA <- readRDS('Figure_1/Processed_data/Seurat/10X_SeuratObject.Rds')
+# Multiply and round predictive matrix
+predMatSumByGene <- round(predMatSumByGene * 1000000)
+EAdisc_ATAC <- CreateSeuratObject(counts = predMatSumByGene, meta.data = as.data.frame(cisTopicObject@cell.data[,1:4]))
+EAdisc_ATAC@active.ident <- as.factor(setNames(EAdisc_ATAC@meta.data$Cell_type, rownames(EAdisc_ATAC@meta.data)))
+EAdisc_ATAC <- subset(x = EAdisc_ATAC, idents = c("Unknown_A","Unknown_B","Unknown_C"),invert = TRUE)
+EAdisc_RNA <- NormalizeData(object = EAdisc_RNA, verbose = FALSE)
+EAdisc_ATAC <- NormalizeData(object = EAdisc_ATAC, verbose = FALSE)
+EAdisc_RNA  <- FindVariableFeatures(object = EAdisc_RNA ,selection.method = "vst", nfeatures = 3000, verbose = FALSE)
+EAdisc_ATAC <- FindVariableFeatures(object = EAdisc_ATAC,selection.method = "vst", nfeatures = 3000, verbose = FALSE)
+EAdisc.anchors <- FindTransferAnchors(reference = EAdisc_RNA, query = EAdisc_ATAC, 
+    dims = 1:20, reduction = "cca")
+RNA2ATAC <- TransferData(anchorset = EAdisc.anchors, refdata = EAdisc_RNA@active.ident, dims = 1:20, weight.reduction = "cca")
+EAdisc_ATAC <- AddMetaData(object = EAdisc_ATAC, metadata = RNA2ATAC)
+DimReduc <- setClass(Class = 'DimReduc', slots = c(cell.embeddings = 'matrix', feature.loadings = 'matrix', feature.loadings.projected = 'matrix', assay.used = 'character', global = 'logical', stdev = 'numeric',key = 'character', misc = 'list', jackstraw='ANY'))
+tsne_coords <- cisTopicObject@dr$cell$tSNE
+colnames(tsne_coords) <- c('tSNE_1', 'tSNE_2')
+EAdisc_ATAC@reductions$tsne <- new('DimReduc', cell.embeddings=tsne_coords, assay.used ='RNA', key='tSNE_')
+saveRDS(EAdisc_ATAC, file='Figure_2/Processed_data/Seurat/10X_ATAC_LT_SeuratObject.Rds')
+```
+
+```{r, message=FALSE}
+colors <- readRDS('Figure_1/Processed_data/Seurat/10X_ColVars.Rds')
+EAdisc_ATAC <- readRDS('Figure_2/Processed_data/Seurat/10X_ATAC_LT_SeuratObject.Rds')
+DimPlot(object = EAdisc_ATAC, reduction = 'tsne', cols=colors, label=TRUE, label.size = 2.5, group.by='predicted.id') + NoLegend() + NoAxes()
+```
