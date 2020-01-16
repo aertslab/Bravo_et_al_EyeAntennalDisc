@@ -265,7 +265,7 @@ SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coord
 SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', signature='Regulon_grh')
 ```
 
-# Label transfering from scRNA-seq data set
+# Label transfering from scRNA-seq data set - Figure 2h
 
 ```{r, eval=FALSE, message=FALSE}
 # Use Seurat v3
