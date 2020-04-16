@@ -101,7 +101,7 @@ plotVMFeatures(VM_ATAC, predMat_Janelia, features=c('GMR16H11'), thr=0)
 plotVMFeatures(VM_ATAC, predMat_Janelia, features=c('GMR25F01'), thr=0)
 ```
 
-# Accessibility-Activity comparison - Panel E
+# Accessibility-Activity comparison - Figure 3e
 
 For mapping Janelia activity into the virtual template, use the Image_detector.mlx script.
 
@@ -162,7 +162,7 @@ slope <- model$coefficient["giniscore_JaneliaPredMat"]
 abline(int, slope, lty=1, lwd=2, col="red")
 ```
 
-# Intersection with topics - Panel F
+# Intersection with topics - Figure 3f
 
 ```{r, results='asis', message=FALSE}
 # Load data
