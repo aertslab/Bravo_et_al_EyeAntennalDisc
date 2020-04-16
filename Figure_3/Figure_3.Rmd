@@ -1,0 +1,188 @@
+---
+title: "Preprint: Bravo González-Blas et al., 2019; Figure 3"
+author: "Carmen Bravo González-Blas"
+vignette: >
+  %\VignetteIndexEntry{Preprint: Bravo González-Blas et al., 2019, message=FALSE}
+  %\VignetteEngine{knitr::rmarkdown, message=FALSE}
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+    number_sections: false
+  pdf_document:
+    toc: yes
+  html_notebook:
+    toc: yes
+---
+
+# ScoMAP - Figure 3a
+
+ScoMAP (ScoMAP: Single-Cell Omics Mapping into spatial Axes using Pseudotime ordering) is an R package to spatially integrate single-cell omics data into virtual cells. These virtual cells may be organized in a template that resembles the tissue (e.g. such as the Drosophila’s eye-antennal disc; see Bravo González-Blas et al., 2019a), or into an abstract space (e.g. when cell types are not spatially located). ScoMAP also includes functionalities to derive enhancer-to-gene relationships from the virtual template when mapping both single-cell transcriptomic and epigenomic data into the virtual cells.
+
+A detailed tutorial on how to generate the eye-antennal disc virtual template and map single-cell omics data is available at: https://github.com/aertslab/ScoMAP.
+
+# Gene expression - Figure 3b
+
+```{r, results='asis', message=FALSE}
+# Load packages and data
+suppressWarnings(library(ScoMAP))
+# Load data and use ScoMAP to plot some examples
+VM_RNA <- readRDS('Figure_3/output_ScoMAP/VM_RNA_MAPPED.RDS')
+# Take disc proper cell types
+VM_RNA <- VM_RNA[-which(VM_RNA$cluster_annot %in% c("PM_lateral", "PM_medial", "twi_cells", "Hemocytes", "Glia")),]
+Seurat_RNA <- readRDS('Figure_1/Processed_data/Seurat/10X_SeuratObject.Rds')
+DGEM <- Seurat_RNA@assays$RNA@data
+par(mfrow=c(2,2))
+plotVMFeatures(VM_RNA, DGEM, features=c('hth', 'salm', 'danr'), thr=0)
+plotVMFeatures(VM_RNA, DGEM, features=c('ct', 'Dll', 'ss'), thr=0)
+plotVMFeatures(VM_RNA, DGEM, features=c('Optix', 'ato', 'gl'), thr=0)
+plotVMFeatures(VM_RNA, DGEM, features=c('oc', 'toy', 'dpp'), thr=0)
+```
+
+# Accessiblity of Janelia lines - Figure 3c,d
+
+```{r, eval=FALSE, results='asis', message=FALSE}
+# Load packages
+library(cisTopic)
+# Load cisTopicObject
+cisTopicObject <- readRDS('Figure_2/Processed_data/cisTopic/cisTopicObject.Rds')
+# Map Janelia enhancers (with at least one selected image on the eye-antennal disc) to ctx regions
+Janelia_lines <- read.table('Figure_3/Input_data/signatures/Janelia_lines_dm6.bed') # Obtained from Janelia Flylight
+lines_with_image <- list.files('Figure_3/Selected_images/')
+lines_with_image <- unique(sapply(strsplit(lines_with_image, split = "__"), "[", 1))
+lines_with_image <- paste0('GM', lines_with_image)
+# Remove extra character
+for (i in 1:length(lines_with_image)){
+  if (nchar(lines_with_image[i]) == 9){
+    lines_with_image[i] <- gsub('.{1}$', '', lines_with_image[i])
+  }
+}
+# Create GenomicRanges
+library(GenomicRanges)
+Janelia_lines_eye <- Janelia_lines[which(unlist(as.vector(Janelia_lines[,4])) %in% lines_with_image),]
+colnames(Janelia_lines_eye) <- c('seqnames', 'start', 'end', 'line')
+Janelia_lines_eye_granges <- makeGRangesFromDataFrame(Janelia_lines_eye, keep.extra.columns=TRUE)
+rownames(Janelia_lines_eye) <- paste0(Janelia_lines_eye$seqnames, ':', Janelia_lines_eye$start, '-', Janelia_lines_eye$end)
+# Select ctx regions which overlap a peak in any of the cell-type specific pseudobulks
+cisTopicObject <- getSignaturesRegions(cisTopicObject, 'Figure_3/Processed_data/AllSummitsPseudobulks_600bp.bed', 'aggr_regions')
+# Intersect regions with Janelis regions
+source('Figure_3/aux_scripts/cisTopic_aux.R')
+mapping <- getOverlapRegionsFromCoordinates(cisTopicObject@region.ranges[cisTopicObject@signatures[['aggr_regions']],], Janelia_lines_eye_granges, minOverlap=0.4, overlapping=TRUE)
+colnames(mapping) <- c('Ctx_region', 'Janelia_region', 'maxOverlap')
+mapping <- cbind(mapping, Janelia_lines_eye[unlist(as.vector(mapping$Janelia_region)), 'line'])
+colnames(mapping)[4] <- 'line'
+saveRDS(mapping, file='Figure_3/Processed_data/JaneliatoCtx.Rds')
+# Calculate region probability and aggregate per Janelia region
+mapping <- mapping[,c(4,1)]
+mapping <- split(mapping, mapping$line, drop=TRUE)
+mapping <- lapply(mapping, function(x) x <- as.vector(unlist(x[,2])))
+predMat <- predictiveDistribution(cisTopicObject)
+predMat_Janelia <- sapply(mapping, function(x) apply(predMat[x,, drop=F], 2, sum))
+predMat_Janelia <- t(predMat_Janelia)
+colnames(predMat_Janelia) <- cisTopicObject@cell.names
+saveRDS(predMat_Janelia, file='Figure_3/Processed_data/Janelia_PredMat.Rds')
+```
+
+```{r, results='asis', message=FALSE}
+# Load packages and data
+library(ScoMAP)
+predMat_Janelia <- readRDS('Figure_3/Processed_data/Janelia_PredMat.Rds')
+# Read scATAC-seq virtual map (see ScoMAP tutorial)
+VM_ATAC <- readRDS('Figure_3/output_ScoMAP/VM_ATAC_MAPPED.RDS')
+# Take disc proper cell types
+VM_ATAC <- VM_ATAC[-which(VM_ATAC$cluster_annot %in% c("PM_lateral", "PM_medial", "twi_cells", "Hemocytes", "Glia")),]
+# Create virtual map Janelia accessibility matrix
+VM_Janelia_Acc <- getVirtualFeatureMatrix(VM_ATAC, predMat_Janelia)
+# Plot some examples
+par(mfrow=c(2,2))
+plotVMFeatures(VM_ATAC, predMat_Janelia, features=c('GMR45E09'), thr=0)
+plotVMFeatures(VM_ATAC, predMat_Janelia, features=c('GMR35E01'), thr=0)
+plotVMFeatures(VM_ATAC, predMat_Janelia, features=c('GMR16H11'), thr=0)
+plotVMFeatures(VM_ATAC, predMat_Janelia, features=c('GMR25F01'), thr=0)
+```
+
+# Accessibility-Activity comparison - Panel E
+
+```{r, eval=FALSE, results='asis', message=FALSE}
+# Read enhancer activity into template
+# Load packages
+library(ScoMAP)
+library(jpeg)
+source('Figure_3/aux_scripts/ScoMAP_aux.R')
+# Path to selected images
+path_images <- 'Figure_3/Selected_images/'
+files <- paste0(path_images, list.files(path_images))
+# Read selected images
+VM_stain <- lapply(files, function(x) readActivity(x))
+names(VM_stain) <- paste0('GM', sapply(strsplit(list.files(path_images), split = "__"), "[", 1))
+# Remove extra character
+for (i in 1:length(names(VM_stain) )){
+  if (nchar(names(VM_stain)[i]) == 9){
+    names(VM_stain)[i] <- gsub('.{1}$', '', names(VM_stain) [i])
+  }
+}
+VM_stain <- VM_stain[!duplicated(names(VM_stain))]
+# Read scATAC-seq virtual map (see ScoMAP tutorial)
+VM_ATAC <- readRDS('Figure_3/output_ScoMAP/VM_ATAC_MAPPED.RDS')
+# Take disc proper cell types
+VM_ATAC <- VM_ATAC[-which(VM_ATAC$cluster_annot %in% c("PM_lateral", "PM_medial", "twi_cells", "Hemocytes", "Glia")),]
+# Create activity matrix
+activityMat <- matrix(0L, nrow = length(VM_stain), ncol = nrow(VM_ATAC), dimnames=list(names(VM_stain), rownames(VM_ATAC)))
+for (row in rownames(activityMat)){activityMat[row, colnames(activityMat) %in% rownames(VM_stain[[row]])] <- 1}
+# Select Janelia lines for which activity and accessibility is provided
+activityMat <- activityMat[rownames(VM_Janelia_Acc), colnames(VM_Janelia_Acc)]
+# Calculate accessibility Gini score
+library(lawstat)
+gini_JaneliaPredMat <- apply(predMat_Janelia, 1, gini.index)
+giniscore_JaneliaPredMat <- sapply(1:length(gini_JaneliaPredMat), function (i) gini_JaneliaPredMat[[i]]$statistic)
+names(giniscore_JaneliaPredMat) <- names(gini_JaneliaPredMat)
+saveRDS(giniscore_JaneliaPredMat, file='Figure_3/Processed_data/Gini_Janelia_PredMat.Rds')
+# Calculate correlation
+Cor <- with(expand.grid(seq(nrow(VM_Janelia_Acc)), seq(nrow(activityMat))),
+            mapply(function(i, j) cor.test(VM_Janelia_Acc[i,], activityMat[j,]),
+                   Var1, Var2), "two.sided", method="spearman")
+Cor <- matrix(unlist(Cor['estimate', ]), nrow=nrow(VM_Janelia_Acc),
+       dimnames=list(rownames(VM_Janelia_Acc), rownames(activityMat)))
+Cor <- diag(Cor)
+saveRDS(Cor, file='Figure_3/Processed_data/Correlation_acc-act.Rds')
+```
+
+```{r, results='asis', message=FALSE}
+# Load data and plot
+giniscore_JaneliaPredMat <- readRDS('Figure_3/Processed_data/Gini_Janelia_PredMat.Rds')
+Cor <- readRDS('Figure_3/Processed_data/Correlation_acc-act.Rds')
+# To add correlation line
+library(robustbase)
+model <- lmrob(Cor~giniscore_JaneliaPredMat)
+plot(giniscore_JaneliaPredMat, Cor, xlim=c(0,1), pch=16, frame=F, xlab='Accessibility gini score', ylab='Correlation accessibility-functionality')
+int <-  model$coefficient["(Intercept)"]
+slope <- model$coefficient["giniscore_JaneliaPredMat"]
+abline(int, slope, lty=1, lwd=2, col="red")
+```
+
+# Intersection with topics - Panel F
+
+```{r, results='asis', message=FALSE}
+# Load data
+suppressWarnings(library(cisTopic))
+mapping <- readRDS('Figure_3/Processed_data/JaneliatoCtx.Rds')
+cisTopicObject <- readRDS('Figure_2/Processed_data/cisTopic/cisTopicObject.Rds')
+cisTopicObject <- getSignaturesRegions(cisTopicObject, 'Figure_3/Processed_data/AllSummitsPseudobulks_600bp.bed', 'aggr_regions')
+# Primed regions
+janelia_primed <- unique(c(names(giniscore_JaneliaPredMat[which(giniscore_JaneliaPredMat < 0.2)])))
+low_gini_ctx <- as.vector(unlist(mapping[which(as.vector(unlist(mapping[,'line'])) %in% janelia_primed), 1]))
+selectedTopics <- c(9,15,31,33,14,19,26,40,29,22,8,38,7,12,24,43,2,5,48)
+averageTopicScore <- colMeans(cisTopicObject@region.data[low_gini_ctx[which(low_gini_ctx %in% cisTopicObject@signatures$aggr_regions)], grep('Topic', colnames(cisTopicObject@region.data))[selectedTopics]], na.rm=T)
+names(averageTopicScore) <- gsub('Scores_', '', names(averageTopicScore))
+color <- c(rep('grey', 2), rep('dodgerblue', length(selectedTopics)-2))
+par(mfrow=c(1,2))
+par(las=2)
+barplot(averageTopicScore, col=color, ylab='Average topic score')
+# Specific
+janelia_specific <- unique(c(names(giniscore_JaneliaPredMat[which(giniscore_JaneliaPredMat > 0.4)])))
+high_gini_ctx <- as.vector(unlist(mapping[which(as.vector(unlist(mapping[,'line'])) %in% janelia_specific), 1]))
+averageTopicScore <- colMeans(cisTopicObject@region.data[high_gini_ctx[which(high_gini_ctx %in% cisTopicObject@signatures$aggr_regions)], grep('Topic', colnames(cisTopicObject@region.data))[selectedTopics]], na.rm=T)
+names(averageTopicScore) <- gsub('Scores_', '', names(averageTopicScore))
+par(las=2)
+barplot(averageTopicScore, col=color, ylab='Average topic score')
+```
