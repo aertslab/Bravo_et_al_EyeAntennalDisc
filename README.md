@@ -1,9 +1,14 @@
-Repository containing the code for Bravo González-Blas et al. (2019).
+Repository containing the code for the manuscript  'Identification of genomic enhancers through spatial integration of single-cell transcriptomics and epigenomics' (Bravo et al., 2019-2020).
+
+### Preprint 
+
+[Bravo González-Blas, Carmen, et al. "Identification of genomic enhancers through spatial integration of single-cell transcriptomics and epigenomics." bioRxiv (2019).](https://www.biorxiv.org/content/10.1101/2019.12.19.882381v1)
 
 ### Detailed vignettes per figure
 
-- [Figure 1](https://rawcdn.githack.com/aertslab/Bravo_et_al_EyeAntennalDisc/48159ae485a160630baacb0212f2c3d685c66d8e/Figure_1/Figure_1.html?token=AAJ5F2JXKFUHTJC2NTO7HQK6EHLNY)
-- [Figure 2](https://raw.githack.com/aertslab/Bravo_et_al_EyeAntennalDisc/db09a6f90df1eb040db38ea334157d596a9639ef/Figure_2/Figure_2.html?token=AESQ3DTUNHRPRE6GRKN6PUS6FHC6W)
+- [Figure 1](https://rawcdn.githack.com/aertslab/Bravo_et_al_EyeAntennalDisc/eb2f9dcfad3433f544a5297db5504dc4501ff972/Figure_1/Figure_1.html)
+- [Figure 2](https://raw.githack.com/aertslab/Bravo_et_al_EyeAntennalDisc/eb2f9dcfad3433f544a5297db5504dc4501ff972/Figure_2/Figure_2.html)
+- [Figure 3](https://raw.githack.com/aertslab/Bravo_et_al_EyeAntennalDisc/eb2f9dcfad3433f544a5297db5504dc4501ff972/Figure_3/Figure_3.html)
 
 
 
