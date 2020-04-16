@@ -8,7 +8,11 @@ Repository containing the code for the manuscript  'Identification of genomic en
 
 - [Figure 1](https://rawcdn.githack.com/aertslab/Bravo_et_al_EyeAntennalDisc/eb2f9dcfad3433f544a5297db5504dc4501ff972/Figure_1/Figure_1.html)
 - [Figure 2](https://raw.githack.com/aertslab/Bravo_et_al_EyeAntennalDisc/eb2f9dcfad3433f544a5297db5504dc4501ff972/Figure_2/Figure_2.html)
+<<<<<<< HEAD
 - [Figure 3](https://raw.githack.com/aertslab/Bravo_et_al_EyeAntennalDisc/103edb3c7834f59033a3baa5220d528c9f81fb47/Figure_3/Figure_3.html)
+=======
+- [Figure 3](https://raw.githack.com/aertslab/Bravo_et_al_EyeAntennalDisc/5b44631f8cdca56fa51dfbda6f8978409d9cfbc6/Figure_3/Figure_3.html)
+>>>>>>> 8e95d155db4c109c27c413ca37c4d980c066f2b2
 
 
 
