@@ -17,7 +17,7 @@ output:
 
 # ScoMAP - Figure 3a
 
-ScoMAP (ScoMAP: Single-Cell Omics Mapping into spatial Axes using Pseudotime ordering) is an R package to spatially integrate single-cell omics data into virtual cells. These virtual cells may be organized in a template that resembles the tissue (e.g. such as the Drosophila’s eye-antennal disc; see Bravo González-Blas et al., 2019a), or into an abstract space (e.g. when cell types are not spatially located). ScoMAP also includes functionalities to derive enhancer-to-gene relationships from the virtual template when mapping both single-cell transcriptomic and epigenomic data into the virtual cells.
+ScoMAP (ScoMAP: Single-Cell Omics Mapping into spatial Axes using Pseudotime ordering) is an R package to spatially integrate single-cell omics data into virtual cells. These virtual cells may be organized in a template that resembles the tissue (e.g. such as the Drosophila’s eye-antennal disc; see Bravo González-Blas et al., 2019), or into an abstract space (e.g. when cell types are not spatially located). ScoMAP also includes functionalities to derive enhancer-to-gene relationships from the virtual template when mapping both single-cell transcriptomic and epigenomic data into the virtual cells.
 
 A detailed tutorial on how to generate the eye-antennal disc virtual template and map single-cell omics data is available at: https://github.com/aertslab/ScoMAP.
 
