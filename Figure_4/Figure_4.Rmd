@@ -1,0 +1,176 @@
+---
+title: "Preprint: Bravo González-Blas et al., 2019; Figure 4"
+author: "Carmen Bravo González-Blas"
+vignette: >
+  %\VignetteIndexEntry{Preprint: Bravo González-Blas et al., 2019, message=FALSE}
+  %\VignetteEngine{knitr::rmarkdown, message=FALSE}
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+    number_sections: false
+    df_print: paged
+  pdf_document:
+    toc: yes
+  html_notebook:
+    toc: yes
+---
+
+# ScoMAP - Figure 4a
+
+ScoMAP (ScoMAP: Single-Cell Omics Mapping into spatial Axes using Pseudotime ordering) is an R package to spatially integrate single-cell omics data into virtual cells. These virtual cells may be organized in a template that resembles the tissue (e.g. such as the Drosophila’s eye-antennal disc; see Bravo González-Blas et al., 2019), or into an abstract space (e.g. when cell types are not spatially located). ScoMAP also includes functionalities to derive enhancer-to-gene relationships from the virtual template when mapping both single-cell transcriptomic and epigenomic data into the virtual cells.
+
+A detailed tutorial on how to generate the eye-antennal disc virtual template, map single-cell omics data and infer enhancer-to-gene links is available at: https://github.com/aertslab/ScoMAP.
+
+# Visualization of enhancer-to-gene links - Figure 4b,c,d
+
+```{r, results='asis', message=FALSE}
+# Load links from ScoMAP
+suppressWarnings(library(ScoMAP))
+RF_links <- readRDS('Figure_4/output_ScoMAP/RF_links.Rds')
+Cor_links <- readRDS('Figure_4/output_ScoMAP/Cor_links.Rds')
+prunedLinks <- suppressWarnings(pruneLinks(RF_links=RF_links, Cor_links=Cor_links))
+```
+
+```{r, results='asis', message=FALSE}
+# Visualization
+library(cicero)
+library(AnnotationDbi)
+library(org.Dm.eg.db)
+library(TxDb.Dmelanogaster.UCSC.dm6.ensGene)
+data(dm6_annot) 
+# Links
+# sens
+plotLinks(RF_links=prunedLinks[[1]], Cor_links=prunedLinks[[2]], dm6_annot, TxDb.Dmelanogaster.UCSC.dm6.ensGene, org.Dm.eg.db, gene='sens', 'chr3L', 13395000, 13402000, cutoff=0)
+# dac
+plotLinks(RF_links=prunedLinks[[1]], Cor_links=prunedLinks[[2]], dm6_annot, TxDb.Dmelanogaster.UCSC.dm6.ensGene, org.Dm.eg.db, gene='dac', 'chr2L', 16460000, 16490000, cutoff=0)
+# gl
+plotLinks(RF_links=prunedLinks[[1]], Cor_links=prunedLinks[[2]], dm6_annot, TxDb.Dmelanogaster.UCSC.dm6.ensGene, org.Dm.eg.db, gene='gl', 'chr3R', 18330130, 18422085, cutoff=0)
+```
+
+# Number of links per gene - Figure 4e
+
+```{r, results='asis', message=FALSE}
+hist(as.vector(unlist(lapply(prunedLinks[[1]], nrow))), breaks=50, col='dodgerblue', xlab='Number of links', main='')
+```
+
+# Distance to gene - Figure 4f
+
+```{r, eval=FALSE, results='asis', message=FALSE}
+data_bb <- exportBB(RF_links=prunedLinks[[1]], Cor_links=prunedLinks[[2]], txdb=TxDb.Dmelanogaster.UCSC.dm6.ensGene, org.db=org.Dm.eg.db, standardized=TRUE, save_path='Figure_4/output_ScoMAP/UCSC_LINKS.bb') 
+regions <- unique(makeGRangesFromDataFrame(regionName2DataFrame(as.vector(unlist(data_bb[,'sourceName'])))))
+TSS <- unique(makeGRangesFromDataFrame(data_bb[,c('targetChrom', 'targetStart', 'targetEnd')]))
+source('Figure_4/aux_scripts/Distance_aux.R')
+distanceIndex2Gene <- llply(1:length(regions), function (i) distanceIndex2Gene(regions[i,], TSS, data_bb))
+names(distanceIndex2Gene) <- regionName2DataFrame(as.vector(unlist(data_bb[,'sourceName'])))
+saveRDS(data_bb, file='Figure_4/Processed_data/data_bb.Rds')
+saveRDS(distanceIndex2Gene, file='Figure_4/Processed_data/distanceIndex2Gene.Rds')
+```
+
+```{r, results='asis', message=FALSE}
+distanceIndex2Gene <- readRDS('Figure_4/Processed_data/distanceIndex2Gene.Rds')
+distanceIndex2Gene <- as.vector(unlist(distanceIndex2Gene))
+distanceIndex2Gene[which(distanceIndex2Gene >= 30)] <- 30
+par(las=2)
+barplot(table(distanceIndex2Gene), col='dodgerblue', xlab='Gene index from region', ylab='Frequency')
+```
+
+# Positive/Negative links - Figure 4g
+
+```{r, results='asis', message=FALSE}
+Positive <- sum(as.vector(unlist(lapply(prunedLinks[[2]], function(x) sum(x > 0)))))
+Negative <- sum(as.vector(unlist(lapply(prunedLinks[[2]], function(x) sum(x < 0)))))
+barplot(c(Positive, Negative), names.arg=c('+', '-'), col=c('forestgreen', 'brown1'), ylab='Number of links')
+```
+
+# Link-based regulons - Figure 4h
+
+```{r, results='asis', message=FALSE}
+# GRNBoost modules
+source('Figure_4/aux_scripts/Regulon_aux.R')
+modules <- read_gmt('Figure_1/Processed_data/SCENIC/modules.gmt')
+names(modules) <- gsub('Regulon for ', '', names(modules))
+modules <- sapply(modules, function(x) x$genes)
+# Select ato, gl, onecut (more than one, different thresholds)
+modules <- modules[names(modules) %in% c('ato', 'gl', 'onecut')]
+# Create region modules
+region_modules <- lapply(modules, function(x) unique(as.vector(unlist(sapply(prunedLinks[[1]][x], rownames)))))
+names(region_modules) <- names(modules)
+```
+
+```{r, eval=FALSE, results='asis', message=FALSE}
+# Run Rcistarget
+library(RcisTarget)
+library(feather)
+library(plyr)
+## Regions
+region_modules_ctx <- sapply(region_modules, function (x)  {x <- paste0('dmel_r6.02__', x)})
+pathToFeather <- "/feather/dm6-regions-11species.withDL.mc9nr.feather"
+## Motif annot
+data(motifAnnotations_dmel)
+# Load feather
+ctxreg <- unique(as.vector(unlist(region_modules_ctx)))
+motifRankings <- importRankings(pathToFeather, columns = c('features', ctxreg))
+columnsinRanking <- feather_metadata(pathToFeather)[[2]][2]
+# Run cisTarget
+ctx_region_modules <- suppressWarnings(llply(1:length(region_modules_ctx), function (i) cisTarget(region_modules_ctx[[i]],
+    motifRankings,
+    motifAnnot = motifAnnotations_dmel,
+    nesThreshold = 3,
+    aucMaxRank = 0.01 * columnsinRanking,
+    geneErnMmaxRank = 5000,
+    nCores=1,
+    highlightTFs = names(region_modules_ctx)[i]),
+    .parallel = FALSE))
+names(ctx_region_modules) <- names(region_modules_ctx)
+saveRDS(ctx_region_modules, file='Figure_4/Processed_data/ctx_region_modules.Rds')
+```
+
+```{r, results='asis', message=FALSE}
+library(data.table)
+data_bb <- readRDS('Figure_4/Processed_data/data_bb.Rds')
+ctx_region_modules <- readRDS('Figure_4/Processed_data/ctx_region_modules.Rds')
+linkRegulons_bb <- linkRegulons(ctx_region_modules, data_bb, modules)
+# Regulon visualized in cytoscape
+head(linkRegulons_bb[['ato_extended']])
+```
+
+```{r, results='asis', message=FALSE}
+# Visualize genes
+plotLinks(RF_links=prunedLinks[[1]], Cor_links=prunedLinks[[2]], dm6_annot, TxDb.Dmelanogaster.UCSC.dm6.ensGene, org.Dm.eg.db, gene='sca', 'chr2R', 12766637, 12814780, cutoff=0)
+plotLinks(RF_links=prunedLinks[[1]], Cor_links=prunedLinks[[2]], dm6_annot, TxDb.Dmelanogaster.UCSC.dm6.ensGene, org.Dm.eg.db, gene='phyl', 'chr2R', 14384998, 14483023, cutoff=0)
+```
+
+```{r, results='asis', message=FALSE}
+# Enrichment of LOF and GOF
+# GOF
+ranking_data <- read.delim('Figure_4/Processed_data/signature/updated_geneNames_atoGOF_bylogFC.rnk', header=FALSE)
+ranking <- ranking_data[,2]
+names(ranking) <- ranking_data[,1]
+geneset <- list()
+geneset[['ato']] <- unique(as.vector(unlist(linkRegulons_bb[['ato_extended']]$name)))
+library(fgsea)
+fgseaRes <- fgsea(pathways = geneset, 
+                  gseaParam = 1,
+                  stats = ranking,
+                  minSize=15,
+                  maxSize=3000,
+                  nperm=10000)
+plotEnrichmentCustom(geneset[['ato']], ranking, gseaParam = 1) + labs(title=paste('GOF_ato_link_based', '/ Size:', fgseaRes[[1,'size']], 'LE:', length(fgseaRes[[1,'leadingEdge']]),'NES:',  round(fgseaRes[[1,'NES']],2)))
+# LOF
+ranking_data <- read.delim('Figure_4/Processed_data/signature/updated_geneNames_atoLOF_bylogFC.rnk', header=FALSE)
+ranking <- ranking_data[,2]
+names(ranking) <- ranking_data[,1]
+geneset <- list()
+geneset[['ato']] <- unique(as.vector(unlist(linkRegulons_bb[['ato_extended']]$name)))
+library(fgsea)
+fgseaRes <- fgsea(pathways = geneset, 
+                  gseaParam = 1,
+                  stats = ranking,
+                  minSize=15,
+                  maxSize=3000,
+                  nperm=10000)
+plotEnrichmentCustom(geneset[['ato']], ranking, gseaParam = 1) + labs(title=paste('LOF_ato_link_based', '/ Size:', fgseaRes[[1,'size']], 'LE:', length(fgseaRes[[1,'leadingEdge']]),'NES:',  round(fgseaRes[[1,'NES']],2)))
+```
+
+
