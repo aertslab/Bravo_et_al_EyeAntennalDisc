@@ -66,21 +66,60 @@ PCA_estimate_nPC<-function(data, whereto, k=10, from.nPC = 2, to.nPC=150, by.nPC
   return(nPC)
 }
 
-RGBColoring <- function(object, coordinates, genes, thr=0.3){
+# Color genes RGB
+RGBColoring <- function(object, coordinates, genes, thr=0.3, slot='scale.data'){
+  if (length(genes) == 1){
+    red <- genes[1]
+    if(slot =='scale.data'){
+      geneMat <- object@assays$RNA@scale.data[red,,drop=FALSE]
+    } else if (slot == 'data'){
+      geneMat <- object@assays$RNA@data[red,,drop=FALSE]
+    }
+    
+    modCols <- list(red=red)
+  } else if (length(genes) == 2) {
+    red <- genes[1]
+    green <- genes[2]
+    if(slot =='scale.data'){
+      geneMat <- object@assays$RNA@scale.data[c(red,green),,drop=FALSE]
+    } else if (slot == 'data'){
+      geneMat <- object@assays$RNA@data[c(red,green),,drop=FALSE]
+    }
+    modCols <- list(red=red, green=green)
+  } else if (length(genes) == 3) {
     red <- genes[1]
     green <- genes[2]
     blue <- genes[3]
-    geneMat <- EAdisc@assays$RNA@scale.data[c(red, blue, green),]
-    coordinates <- EAdisc@reductions[[coordinates]]@cell.embeddings
-    geneMat <- t(apply(geneMat, 1, function(x) (x-min(x))/(max(x)-min(x))))
+    if(slot =='scale.data'){
+      geneMat <- object@assays$RNA@scale.data[c(red,green,blue),,drop=FALSE]
+    } else if (slot == 'data'){
+      geneMat <- object@assays$RNA@data[c(red,green,blue),,drop=FALSE]
+    }
     modCols <- list(red=red, green=green, blue=blue)
+  } else {
+    stop('A minimum of 1 and maximum of 3 the genes can be provided.')
+  }
+    coordinates <- object@reductions[[coordinates]]@cell.embeddings
+    geneMat <- t(apply(geneMat, 1, function(x) (x-min(x))/(max(x)-min(x))))
     offColor <- "#c0c0c030" # Transparent light gray
     modCols <- lapply(modCols, function(x) sapply(x, function(gene) rownames(geneMat)[gene]))
     cellColChan <- sapply(modCols, function(modsCol) apply(as.matrix(geneMat[names(modsCol),]), 1, mean))
-    cellCol <- apply(cellColChan, 1, function(x) rgb(x["red"], x["green"], x["blue"], alpha=.8))
+    if (length(genes) == 1){
+      cellCol <- apply(cellColChan, 1, function(x) rgb(x["red"], 0, 0, alpha=.8))
+    } else if (length(genes) == 2) {
+      cellCol <- apply(cellColChan, 1, function(x) rgb(x["red"], x["green"], 0, alpha=.8))
+    } else if (length(genes) == 3) {
+      cellCol <- apply(cellColChan, 1, function(x) rgb(x["red"], x["green"], x["blue"], alpha=.8))
+    }
     names(cellCol) <- colnames(geneMat)
     coord_sorted <- names(sort(cellCol[rownames(coordinates)]))
     cellCol[as.vector(which(rowSums(cellColChan) < thr))] <- offColor
     plot(coordinates[coord_sorted,], col=cellCol[coord_sorted], pch=16, axes=FALSE, frame.plot=FALSE, ann=FALSE, cex=0.5)
-    legend("topright", legend =  genes, fill=c('red', 'green', 'blue'), cex=0.5)
+    if (length(genes) == 1){
+      legend("topright", legend =  genes, fill=c('red'), cex=0.5)
+    } else if (length(genes) == 2) {
+      legend("topright", legend =  genes, fill=c('red', 'green'), cex=0.5)
+    } else if (length(genes) == 3) {
+      legend("topright", legend =  genes, fill=c('red', 'green', 'blue'), cex=0.5)
+    }
 }
