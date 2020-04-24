@@ -1,0 +1,245 @@
+---
+title: "Preprint: Bravo González-Blas et al., 2019; Figure 6"
+author: "Carmen Bravo González-Blas"
+vignette: >
+  %\VignetteIndexEntry{Preprint: Bravo González-Blas et al., 2019, message=FALSE}
+  %\VignetteEngine{knitr::rmarkdown, message=FALSE}
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+    number_sections: false
+    df_print: paged
+  pdf_document:
+    toc: yes
+  html_notebook:
+    toc: yes
+---
+
+# cisTopic on bootstrapped cells - Figure 6a
+
+For the generation of bootstrapped cells, see the script Figure_6_Bootstrapping.ipynb.
+
+```{r, eval=FALSE, results='asis', message=FALSE}
+# Run cisTopic
+library(cisTopic)
+pathToBams <- 'Figure_6/Bootstrapped_BAM/'
+bamFiles <- paste(pathToBams, list.files(pathToBams), sep='')
+regions <- 'Figure_6/Bootstrapped_BAM/Input_data/cisTarget/cut_50_0.1_all_genome_noExons_min500_dm6_newNames_blacklisted_regions.bed'
+cisTopicObject <- createcisTopicObjectFromBAM(bamFiles, regions, project.name='Bootstrapped_Perturbations')
+cisTopicObject <- runModels(cisTopicObject, topic=c(2, 10:20, 50,60, 70, 80, 90, 100), seed=555, nCores=15, burnin = 250, iterations = 500)
+cisTopicObject <- selectModel(cisTopicObject, select=21)
+# Add perturbation metadata
+pertur <- gsub('X.ddn1.vol1.staging.leuven.stg_00002.lcb.cbravo.XJ_KD_EAD.Bootstrapped.','',cisTopicObject@cell.names)
+pertur <- gsub('_\\d+.sorted.bam','',pertur)
+names(pertur) <- cisTopicObject@cell.names
+pertur <- as.data.frame(pertur)
+colnames(pertur) <- 'Perturbation'
+cisTopicObject <- addCellMetadata(cisTopicObject, pertur)
+saveRDS(cisTopicObject, file='Figure_6/Processed_data/cisTopic/cisTopicObject_Bootstrapped_GMRGAL4.Rds')
+```
+
+```{r, eval=FALSE, results='asis', message=FALSE}
+library(cisTopic)
+library(ComplexHeatmap)
+cisTopicObject <- readRDS('Figure_6/Processed_data/cisTopic/cisTopicObject_Bootstrapped_GMRGAL4.Rds')
+selected.mat <- t(modelMatSelection(cisTopicObject, method='Probability', target='cell'))
+selected.mat <- selected.mat[,c(1,8,16,19,11,6,4,18,13,10,7,9,20,5,15,14,2,21,3,17,12)]
+rownames(selected.mat) <- rownames(cisTopicObject@cell.data)
+class <- as.vector(unlist(cisTopicObject@cell.data$Perturbation))
+names(class) <- rownames(cisTopicObject@cell.data)
+neworder <- c(names(class)[which(class == 'GMR_GAL4_UAS_pros')], names(class)[which(class == 'GMR_GAL4_UAS_lolaT')],  names(class)[which(class == "GMR_GAL4_UAS_l3neo38")], names(class)[which(class == "GMR_GAL4_UAS_nerfinHA")], names(class)[which(class == "GMR_GAL4_nerfin_CE")], names(class)[which(class == "GMR_GAL4_UAS_Sp1")], names(class)[which(class == "GMR_GAL4_UAS_ttk69")], names(class)[which(class ==  "GMR_GAL4_UAS_lz")], names(class)[which(class == "GMR_GAL4_UAS_lola_L")], names(class)[which(class == 'DG2_WT')], names(class)[which(class == "GMR_GAL4_UAS_lov")],  names(class)[which(class == "GMR_GAL4_UAS_psq")], names(class)[which(class == "GMR_GAL4_UAS_fru9280")], names(class)[which(class == "GMR_GAL4_UAS_ttk88")], names(class)[which(class == "GMR_GAL4_UAS_fru2366")])
+class <- class[neworder]
+rownames(selected.mat) <- rownames(cisTopicObject@cell.data)
+selected.mat <- t(selected.mat[neworder,])
+source('Figure_6/aux_scripts/cisTopic_aux.R')
+colors <- distinctColorPalette(length(unique(class)))
+names(colors) <- unique(class[neworder])
+colVars <- list()
+colVars[['Perturbation']] <- colors
+colVars$Perturbation <- colVars$Perturbation[!is.na(names(colVars$Perturbation))]
+color_cells <- setNames(colors[class], names(class))
+class_fr <- as.data.frame(class)
+rownames(class_fr) <- names(class)
+colnames(class_fr) <- 'Perturbation'
+colorPal <- grDevices::colorRampPalette(c('floralwhite', 'red', 'darkred'))
+annotation <- ComplexHeatmap::HeatmapAnnotation(df = class_fr, col = colVars, which='column', width = unit(5, "mm"))
+heatmap <- ComplexHeatmap::Heatmap(data.matrix(selected.mat), col=colorPal(20), cluster_columns=FALSE, cluster_rows=F, name='Probability', show_column_names=FALSE, show_row_names = TRUE, top_annotation = annotation, heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(5, "cm"), title_position='topcenter'), column_title = "Topic contribution per cell", column_title_gp = gpar(fontface = 'bold'))
+saveRDS(heatmap, file='Figure_6/Processed_data/cisTopic/Ordered_Topic_Heatmap.Rds')
+```
+
+```{r, results='asis', message=FALSE}
+heatmap <- readRDS('Figure_6/Processed_data/cisTopic/Ordered_Topic_Heatmap.Rds')
+ComplexHeatmap::draw(heatmap, heatmap_legend_side = "bottom", annotation_legend_side = "right")
+```
+
+# Region topic examples (UCSC) and motif enrichment - Figure 6b
+
+```{r, eval=FALSE, results='asis', message=FALSE}
+library(cisTopic)
+cisTopicObject <- getRegionsScores(cisTopicObject, method='NormTop', scale=TRUE)
+cisTopicObject <- binarizecisTopics(cisTopicObject, thrP=0.99, plot=FALSE)
+cisTopicObject <- binarizedcisTopicsToCtx(cisTopicObject, genome='dm6')
+cisTopicObject <- scoredRegionsToCtx(cisTopicObject, genome='dm6')
+pathToFeather <- "/feather/dm6-regions-11species.mc8nr.feather"
+cisTopicObject <- topicsRcisTarget(cisTopicObject, genome='dm6', pathToFeather, reduced_database=FALSE, nesThreshold=3, rocthr=0.01, maxRank=5000, nCores=1)
+saveRDS(cisTopicObject, file='Figure_6/Processed_data/cisTopic/cisTopicObject_Bootstrapped_GMRGAL4.Rds')
+```
+
+```{r, results='asis', message=FALSE}
+library(RcisTarget)
+cisTopicObject <- readRDS('Figure_6/Processed_data/cisTopic/cisTopicObject_Bootstrapped_GMRGAL4.Rds')
+Motif_enr <- data.table::rbindlist(cisTopicObject@binarized.RcisTarget)
+Motif_enr <- Motif_enr[,-c("enrichedRegions", 'logo'), with=FALSE]
+Motif_enr <- addLogo(Motif_enr, dbVersion='v8')
+DT::datatable(Motif_enr, escape = FALSE, filter="top", options=list(pageLength=5))
+```
+
+# Coverage heatmaps - Figure 6c
+
+Using DeepTools:
+
+```{bash, eval=FALSE, results='asis', message=FALSE}
+# Bash
+dir='Figure_6/Bootstrapped_bigwig'
+cd Figure_6/Processed_data/DeepTools
+computeMatrix scale-regions \
+-R GMR-GAL4_sorted_Topic_12.bed GMR-GAL4_sorted_Topic_24.bed \ 
+-S $dir/DGRP_55026_q4_sorted.normalized.bw \
+$dir/EAD__7431f0__OmniATAC_6_GMR-Gal4_uas-pros_L_eye_disc_S2_R1_001_q4_sorted.normalized.bw \
+$dir/EAD__17b679__OmniATAC_GMR_Gal4_cross_UAS_nerfin_HA_L3_EAD_S7_R1_001_q4_sorted.normalized.bw \
+$dir/EAD__fa6722__OmniATAC_GMR_Gal4_cross_UAS_nerfin_CE_L3_EAD_S6_R1_001_q4_sorted.normalized.bw \
+$dir/DFB__bbe8fb__OmniATAC_GMR-Gal4_uasl_3_neo38_L3_EAD_S91_R1_001_q4_sorted.normalized.bw \
+-b 2000 -a 2000 \
+--samplesLabel WT Pros Nerfin-HA Nerfin-CE l3neo38 \
+--sortRegions descend \
+--sortUsing mean \
+-p 5 \
+--missingDataAsZero \
+-o GGG_PR_Regions_on_GMR-GAL4
+
+plotHeatmap \
+--matrixFile  GGG_PR_Regions_on_GMR-GAL4 \
+--regionsLabel Topic_12 Topic_24 \
+--sortRegions keep \
+--colorMap Oranges \
+--dpi 800 \
+--outFileName GGG_PR_Regions_on_GMR-GAL4.pdf
+```
+
+GGG regions correspond to the regions enriched for the top GGG motif in topics 12 and 24, intersected with peaks in the GMR-GAL4 ATAC-seq profiles. These regions can be obtained from i-cisTarget:
+
+* Topic_12: https://gbiomed.kuleuven.be/apps/lcb/i-cisTarget-mcv8/reports/90c0e5a6bee943c1bd7f98f1d777c088b3e6e258/report.html
+* Topic_24: https://gbiomed.kuleuven.be/apps/lcb/i-cisTarget-mcv8/reports/ff8e245d918d1b9ef66e06f166520309d7826bff/report.html
+
+# L(3)neo38, Nerfin-1 and Pros gene expression - Figure 6d
+
+```{r, results='asis', message=FALSE}
+EAdisc <- readRDS('Figure_1/Processed_data/Seurat/10X_SeuratObject.Rds')
+source("Figure_1/aux_scripts/Seurat_Utils.R")
+par(mfrow=c(1,3))
+RGBColoring(EAdisc, 'tsne', 'l(3)neo38', thr=0, slot='data')
+RGBColoring(EAdisc, 'tsne', 'nerfin-1', thr=0.05,  slot='data')
+RGBColoring(EAdisc, 'tsne', 'pros', thr=0.05,  slot='data')
+```
+
+# Overlapping ChIP-seq regions - Figure 6e
+
+GGG regions correspond to the regions enriched for the top GGG motif in the ChIP-seq tracks. These regions can be obtained from i-cisTarget:
+
+* Prospero: https://gbiomed.kuleuven.be/apps/lcb/i-cisTarget/reports/7d988685697ac7ec27a6d2ca280e76a319dfe7fb/report.html
+* l(3)neo: https://gbiomed.kuleuven.be/apps/lcb/i-cisTarget/reports/e465e8c60f8da3992fc8e2920283d204864f2b96/report.html
+* Nerfin-1: https://gbiomed.kuleuven.be/apps/lcb/i-cisTarget/reports/325a50d334d40f878fcc9fe276e88fa6c00a115e/report.html
+
+```{r, results='asis', message=FALSE}
+suppressWarnings(library(gplots))
+suppressWarnings(library(cisTopic))
+cisTopicObject <- readRDS('Figure_6/Processed_data/cisTopic/cisTopicObject_Bootstrapped_GMRGAL4.Rds')
+path <- 'Figure_6/Processed_data/ChIP-seq_peaks_GGG/'
+files <- paste0(path, list.files(path)[grep('bed', list.files(path))])
+labels <- gsub('.bed', '', list.files(path)[grep('bed', list.files(path))])
+cisTopicObject <- getSignaturesRegions(cisTopicObject, files, labels=labels, minOverlap = 0.4)
+l3neo <- cisTopicObject@signatures[[labels[1]]]
+nerf <- cisTopicObject@signatures[[labels[2]]]
+pros <- cisTopicObject@signatures[[labels[3]]]
+data <- list(l3neo = l3neo, nerf = nerf, pros=pros)
+names(data) <- c('l(3)neo38', 'Nerfin-1', 'Prospero')
+intersection <- venn(data)
+```
+
+```{r, eval=FALSE, results='asis', message=FALSE}
+# Select shared and unique regions
+coordinates <- cisTopicObject@region.data[ , c('seqnames', 'start', 'end')]
+path <- 'Figure_6/Processed_data/ChIP-seq_peaks_GGG/Intersection/'
+write.table(coordinates[attr(intersection,"intersections")$"l(3)neo38",], file=paste0(path, 'l3neounique.bed'), row.names=FALSE, col.names = FALSE, quote=FALSE,  sep = "\t", eol = "\n")
+write.table(coordinates[attr(intersection,"intersections")$"Nerfin-1",], file=paste0(path, 'nerfunique.bed'), row.names=FALSE, col.names = FALSE, quote=FALSE,  sep = "\t", eol = "\n")
+write.table(coordinates[attr(intersection,"intersections")$Prospero,], file=paste0(path, 'prosunique.bed'), row.names=FALSE, col.names = FALSE, quote=FALSE,  sep = "\t", eol = "\n")
+write.table(coordinates[attr(intersection,"intersections")$"l(3)neo38:Nerfin-1:Prospero",], file=paste0(path, 'shared.bed'), row.names=FALSE, col.names = FALSE, quote=FALSE,  sep = "\t", eol = "\n")
+```
+
+```{bash, eval=FALSE, results='asis', message=FALSE}
+# Score motif collection on unique and shared ChIP-seq regions (combine previous bed files and make fasta) in bash
+module load Python/3.6.4-foss-2018a # Python 3.6
+module load Cluster-Buster/20180705-foss-2018a # Install cbust
+source /PRIME/bin/activate # Virtual environment
+SINGLETONS_FOLDER='/motif_collection_v9/singletons_md5' 
+SINGLETONS_LIST='singletonsList.txt' #List with the motifs you want to score
+FASTA='Figure_6/Processed_data/ChIP-seq_peaks_GGG/Intersection/LNP_GGG.fasta'
+PATH_TO_SAVE='Figure6/Processed_data/PRIME'
+SCRIPT='Figure_6/Processed_data/aux_scripts/make_feature_table.py'
+PATH_TO_CBUST='/software/cbust/' # Add with -c parameter if needed
+time ${SCRIPT} -f ${FASTA} -M $SINGLETONS_FOLDER -m $SINGLETONS_LIST -o ${PATH_TO_SAVE}/${FASTA%.fa}_CRM.feather -t 20 -O 'feather'
+```
+
+```{r, eval=FALSE, results='asis', message=FALSE}
+# Continue in R
+source('Figure_6/aux_scripts/PRIME_aux.R')
+library(feather)
+Scores <- 'Figure_6/Processed_data/PRIME/LNP_GGG_CRM.feather'
+Scores <- readNheader(Scores)
+Group <- rep('Shared', nrow(Scores))
+names(Group) <- rownames(Scores)
+Pros <- read.table(paste0(path, 'prosunique.bed'))
+Pros <- paste0(Pros[,1], ':', Pros[,2]+1, '-', Pros[,3])
+Nerfin <- read.table(paste0(path, 'nerfunique.bed'))
+Nerfin <- paste0(Nerfin[,1], ':', Nerfin[,2]+1, '-', Nerfin[,3])
+l3neo <- read.table(paste0(path, 'l3neounique.bed'))
+l3neo <- paste0(l3neo[,1], ':', l3neo[,2]+1, '-', l3neo[,3])
+Group[Pros] <- 'Prospero'
+Group[Nerfin] <- 'Nerfin-1'
+Group[l3neo] <- 'l(3)neo38'
+Group <- as.data.frame(Group)
+Frame <- cbind(Group, Scores)
+Clusters <- melt(Group)
+all <- rownames(Clusters)
+Clusters <- split(rownames(Clusters), Clusters[,1])
+deComparisons <- data.frame(ProsvsRest=setNames(rep("rest", length(all)), all),
+                            NerfinvsRest=setNames(rep("rest", length(all)), all),
+                            l3neovsRest=setNames(rep("rest", length(all)), all),
+                            SharedvsRest=setNames(rep("rest", length(all)), all),
+                           stringsAsFactors=FALSE)
+deComparisons[Clusters$"Prospero","ProsvsRest"] <- "Prospero"
+deComparisons[Clusters$"Nerfin-1","NerfinvsRest"] <- "Nerfin-1"
+deComparisons[Clusters$"l(3)neo38","l3neovsRest"] <- "l(3)neo38"
+deComparisons[Clusters$"Shared","SharedvsRest"] <- "Shared"
+apply(deComparisons, 2, table)
+#     ProsvsRest NerfinvsRest l3neovsRest SharedvsRest
+#[1,]        489          147         191          827
+#[2,]       1496         1838        1794         1158
+```
+
+```{r, eval=FALSE, results='asis', message=FALSE}
+# Differential enrichment with Mast
+library(MAST)
+lrtOutTable <- DiffEnrichment(deComparisons, Frame)
+saveRDS(lrtOutTable, file='Figure_6/Processed_data/PRIME/lrtOutTable.Rds')
+```
+
+```{r, results='asis', message=FALSE}
+lrtOutTable <- readRDS('Figure_6/Processed_data/PRIME/lrtOutTable.Rds')
+Motif_enr <- data.table::rbindlist(lrtOutTable)
+Motif_enr <- Motif_enr[which(Motif_enr$pAdj < 0.05),-'test.type']
+Motif_enr <- addLogo(Motif_enr)
+DT::datatable(Motif_enr, escape = FALSE, filter="top", options=list(pageLength=5))
+```
+
