@@ -1,0 +1,204 @@
+---
+title: "Preprint: Bravo González-Blas et al., 2019; Figure 5"
+author: "Carmen Bravo González-Blas"
+vignette: >
+  %\VignetteIndexEntry{Preprint: Bravo González-Blas et al., 2019, message=FALSE}
+  %\VignetteEngine{knitr::rmarkdown, message=FALSE}
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+    number_sections: false
+    df_print: paged
+  pdf_document:
+    toc: yes
+  html_notebook:
+    toc: yes
+---
+
+# Visualization of caQTL examples - Figure 5b,c
+
+Processed normalized bigwigs are available at http://genome.ucsc.edu/s/cbravo/Bravo_et_al_EyeAntennalDisc.
+
+# caQTL enrichment heatmap - Figure 5d
+
+```{r, eval=FALSE, results='asis', message=FALSE}
+# Load significant and random caQTLs
+signifSNPS_delta <- readRDS("Figure_5/Processed_data/signifSNPS_delta.Rds")
+randomSNPS_delta <- readRDS("Figure_5/Processed_data/randomSNPS_delta.Rds") # Random SNPs on topic regions
+# Calculate SNPs per topic
+cisTopicObject <- readRDS('Figure_2/Processed_data/cisTopic/cisTopicObject.Rds')
+clusterTopics <- c("2", "5", "7", "8", "12", "14", "19", "21", "22", "23", "24",  "26", "29", "31", "33", "34", "38", "40", "42", "43", "48")
+generalTopics <- c("9", "15", "25")
+otherTopics <- seq_len(nrow(cisTopicObject@selected.model$topics))
+otherTopics <- otherTopics[which(!otherTopics %in% as.numeric(c(clusterTopics, generalTopics)))]
+suppressPackageStartupMessages(library(rtracklayer))
+snps <- list(signif=signifSNPS_delta$SNP, rand=randomSNPS_delta$SNP)
+snps <- lapply(snps, function(x)
+  GRanges(sapply(strsplit(x, "__"), function(x) x[[1]]), mcols=data.frame(snp=x))
+)
+topic_regions <- sapply(cisTopicObject@binarized.cisTopics, rownames)
+topics <- sapply(topic_regions, function(x) cisTopicObject@region.ranges[x,])
+snpsPerTopic <- lapply(snps, function(snpLocs) lapply(topics, function(topic) 
+{ 
+  queryRegions = topic
+  subjectRegions = snpLocs
+  overlaps <- findOverlaps(queryRegions, subjectRegions,
+                           minoverlap=1,  #maxgap=0L, select="all",
+                           type="any", ignore.strand=TRUE)
+  subjectRegions[subjectHits(overlaps)]
+} ))
+snpsPerTopic_caQTLs <- lapply(snpsPerTopic$signif, function(x) as.character(x@elementMetadata$mcols.snp))
+snpsPerTopic_random <- lapply(snpsPerTopic$rand, function(x) as.character(x@elementMetadata$mcols.snp))
+# Add all as bulk
+snpsPerTopic_caQTLs$Bulk <- as.vector(unlist(signifSNPS_delta[,1]))
+snpsPerTopic_random$Bulk <- as.vector(unlist(randomSNPS_delta[,1]))
+```
+
+```{r, eval=FALSE, results='asis', message=FALSE}
+# Calculate how many SNPs have a |delta| > 3
+## Significant SNPs
+seltopicNames <- c(paste0('Topic', c(9,15,8,38,7,12,24,43,14,19,26,40,29,22,31,33,2,5,48)), 'Bulk')
+sign_nMotifsD3_topic <- lapply(seltopicNames, function(i) apply(signifSNPS_delta[which(signifSNPS_delta$SNP %in% snpsPerTopic_caQTLs[[i]]),colnames(signifSNPS_delta)[-1]], 2, sumAbove))
+sign_nMotifsD3_topics <- sign_nMotifsD3_topic[[1]]
+for (i in 2:length(sign_nMotifsD3_topic)) sign_nMotifsD3_topics <- cbind(sign_nMotifsD3_topics, sign_nMotifsD3_topic[[i]])
+colnames(sign_nMotifsD3_topics) <- seltopicNames
+nSignif <- lengths(snpsPerTopic_caQTLs[seltopicNames])
+## Random SNPs
+nMotifsD3 <- cbind(randomAbs=colSums(abs(randomSNPS_delta[,2:ncol(randomSNPS_delta)]) > 3))
+nRand <- nrow(randomSNPS_delta)
+nMotifs <- nrow(nMotifsD3) 
+```
+
+```{r, eval=FALSE, results='asis', message=FALSE}
+# Fisher test
+fisherTestPval <- matrix(NA, nrow=ncol(signifSNPS_delta)-1, ncol=length(seltopicNames), dimnames=list(colnames(signifSNPS_delta)[-1], seltopicNames))
+fisherTestEstimate <- matrix(NA, nrow=ncol(signifSNPS_delta)-1, ncol=length(seltopicNames), dimnames=list(colnames(signifSNPS_delta)[-1], seltopicNames))
+for(topic in seltopicNames)
+{
+  for (motif in colnames(signifSNPS_delta)[-1]) 
+  {
+    nSignifMod <- sign_nMotifsD3_topics[motif, topic]
+    nRndMod <- nMotifsD3[motif,]
+    mat <- matrix(c(nSignifMod, nSignif[topic]-nSignifMod, nRndMod, nRand-nRndMod), ncol=2, byrow=T) 
+    fisherTestPval[motif, topic] <- fisher.test(mat, alternative = "greater")$p.value
+    fisherTestEstimate[motif, topic] <- fisher.test(mat, alternative = "greater")$estimate
+  }
+}
+saveRDS(fisherTestPval, file='Figure_5/Processed_data/fisherTestPvalperTopic.Rds')
+saveRDS(fisherTestEstimate, file='Figure_5/Processed_data/fisherTestEstimateperTopic.Rds')
+fisherTestPvalAdj <- apply(fisherTestPval, 2, p.adjust, method="fdr")
+fisherTestPvalAdj <- cbind(fisherTestPvalAdj , nSignif=rowSums(fisherTestPvalAdj < 0.05, na.rm=T), nSignifNoAdj=rowSums(fisherTestPval < 0.05, na.rm=T))
+saveRDS(fisherTestPvalAdj, file='Figure_5/Processed_data/fisherTestPvalAdjperTopic.Rds')
+```
+
+```{r, eval=FALSE, results='asis', message=FALSE}
+# Overview table
+## Motif annotations
+library(RcisTarget)
+data(motifAnnotations_dmel)
+pMotifStats <- fisherTestPval[which(fisherTestPvalAdj[,"nSignifNoAdj"]>0),]
+colnames(pMotifStats) <- paste0('PAdj_', colnames(pMotifStats))
+annots <- t(sapply(rownames(pMotifStats), function(x)
+  c(direct_ortology=paste0(unlist(motifAnnotations_dmel[motif==x & (directAnnotation | inferred_Orthology),"TF"]), collapse=" ; "),
+    inferred_simil=paste0(unlist(motifAnnotations_dmel[motif==x & !(directAnnotation | inferred_Orthology),"TF"]), collapse=" ; "))))
+# Aggregate delta
+seltopicNames <- c(paste0('Topic', c(9,15,8,38,7,12,24,43,14,19,26,40,29,22,31,33,2,5,48)), 'Bulk')
+sumDelta <- lapply(seltopicNames, function(i) as.data.frame(apply(signifSNPS_delta[which(signifSNPS_delta$SNP %in% snpsPerTopic_caQTLs[[i]]),rownames(fisherTestPvalAdj)], 2, sumAbove_aggr)))
+sumD <- sumDelta[[1]]
+for (i in 2:length(sumDelta)) sumD <- cbind(sumD, sumDelta[[i]])
+colnames(sumD) <- seltopicNames
+colnames(sumD) <- paste0('sumDelta_', colnames(sumD))
+pMotifStats <- data.frame(annots, pMotifStats, signif(sumD[rownames(pMotifStats),]))
+saveRDS(pMotifStats , file='Figure_5/Processed_data/pMotifStats.Rds')                      
+```
+
+```{r, results='asis', message=FALSE}
+# Create table
+pMotifStats <- readRDS(file='Figure_5/Processed_data/pMotifStats.Rds')   
+StatsPerTopic <-RcisTarget::addLogo(data.frame(motif=rownames(pMotifStats), pMotifStats))
+suppressWarnings(DT::datatable(StatsPerTopic, escape = FALSE, filter="top", options=list(pageLength=5)))
+```
+
+```{r, results='asis', message=FALSE}
+# Per topic heatmap
+selected_motifs <- rev(c('cisbp__M1329', 'taipale__GRHL1_full_NAAACCGGTTTN', 'cisbp__M0207', 'homer__GKVTCADRTTWC_Six1', 'flyfactorsurvey__ttk-PA_SANGER_5_FBgn0003870', 'taipale__ONECUT1_DBD_NNAAAATCRATAWN_repr', 'transfac_pro__M00973', 'transfac_pro__M01890', 'transfac_pro__M01498'))
+pMotifStats_sel <- pMotifStats[selected_motifs,]
+pMotifStats_sel$motif <- selected_motifs
+library(reshape2)
+pMotifStats_sel_sumD <- melt(pMotifStats_sel, 'motif', c(colnames(pMotifStats)[grep('sumD', colnames(pMotifStats))]))
+pMotifStats_sel_pAdj <- melt(pMotifStats_sel, 'motif', c(colnames(pMotifStats)[grep('PAdj', colnames(pMotifStats))]))
+pMotifStats_sel_sumD$variable <- gsub('sumDelta_', '', pMotifStats_sel_sumD$variable)
+pMotifStats_sel_sumD$variable <- gsub('Topic', 'Topic_', pMotifStats_sel_sumD$variable)
+colnames(pMotifStats_sel_sumD) <- c('Motif', 'Topic', 'sumD')
+pMotifStats_sel_sumD$logpAdj <- -log10(pMotifStats_sel_pAdj$value)
+pMotifStats_sel <- pMotifStats_sel_sumD
+# Max logPVal and sumD
+pMotifStats_sel$logpAdj[which(pMotifStats_sel$logpAdj > 5)] <- 5
+pMotifStats_sel$sumD[which(pMotifStats_sel$sumD > 20)] <- 20
+pMotifStats_sel$sumD[which(pMotifStats_sel$sumD < -20)] <- -20
+pMotifStats_sel$Motif <- factor(pMotifStats_sel$Motif, levels=selected_motifs)
+pMotifStats_sel$Topic <- factor(pMotifStats_sel$Topic, levels=c(paste0('Topic_', c(9,15,8,38,7,12,24,43,14,19,26,40,29,22,31,33,2,5,48)), 'Bulk'))
+# Heatmap
+source('/media/seq-srv-06/lcb/cbravo/Bravo_et_al_EyeAntennalDisc_github/Figure_5/aux_scripts/caQTL_aux.R')
+dotheatmap(pMotifStats_sel, 
+           var.x='Topic', var.y="Motif", 
+           var.size="logpAdj", min.size=1, max.size=5,
+           var.col="sumD", col.low="dodgerblue", col.mid="floralwhite", col.high="brown1")
+```
+
+# Enrichment of caQTLs in cells - Figure 5e
+
+```{r, eval=FALSE, results='asis', message=FALSE}
+# Select significant SNPs
+signifSNPS_delta <- readRDS("Figure_5/Processed_data/signifSNPS_delta.Rds")
+selected_motifs <- c('taipale__GRHL1_full_NAAACCGGTTTN',  'homer__GKVTCADRTTWC_Six1', 'flyfactorsurvey__ttk-PA_SANGER_5_FBgn0003870', 'cisbp__M5172')
+rownames(signifSNPS_delta) <- signifSNPS_delta[,1]
+signifSNPS_delta_selected <- signifSNPS_delta[,selected_motifs]
+signifSNPS_delta_selected <- sapply(colnames(signifSNPS_delta_selected), function(i) rownames(signifSNPS_delta_selected[which(abs(signifSNPS_delta_selected[,i]) > 2),]))
+source('Figure_5/aux_scripts/caQTL_aux.R')
+signifSNPS_delta_selected <- sapply(signifSNPS_delta_selected, function(x) SNPNames2GRanges(x))
+# Overlap with regions
+cisTopicObject <- readRDS('Figure_2/Processed_data/cisTopic/cisTopicObject.Rds')
+cisTopicObject <- getSignaturesRegions(cisTopicObject, lapply(signifSNPS_delta_selected, function (x) as.data.frame(x)), labels=selected_motifs)
+# Create AUCell Rankings based on the region-cell probabilities
+library(AUCell)
+pred.matrix <- predictiveDistribution(cisTopicObject)
+aucellRankings <- AUCell_buildRankings(pred.matrix, plot=FALSE, verbose=FALSE)
+cisTopicObject <- signatureCellEnrichment(cisTopicObject, aucellRankings, selected.signatures=selected_motifs, aucMaxRank = 0.05*nrow(aucellRankings), plot=FALSE)
+saveRDS(cisTopicObject, file='Figure_2/Processed_data/cisTopic/cisTopicObject.Rds')
+```
+
+```{r, results='asis', message=FALSE}
+# caQTL enrichment
+suppressWarnings(source('Figure_2/aux_scripts/cisTopic_aux.R'))
+cisTopicObject <- readRDS('Figure_2/Processed_data/cisTopic/cisTopicObject.Rds')
+par(mfrow=c(2,2))
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', signature='taipale__GRHL1_full_NAAACCGGTTTN')
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', signature='homer__GKVTCADRTTWC_Six1')
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', signature='cisbp__M5172')
+SignatureEnrichmentBR(cisTopicObject, target='cell', method='Probability', coordinates='tSNE', signature='flyfactorsurvey__ttk-PA_SANGER_5_FBgn0003870')
+```
+
+# Examples of accessibility on regions with caQTLs - Figure 5f
+
+```{r, results='asis', message=FALSE}
+# Select example SNPs
+SNP_list <- list()
+SNP_list[['taipale__GRHL1_full_NAAACCGGTTTN']] <- 'chr3L:17392596__C_A'
+SNP_list[['homer__GKVTCADRTTWC_Six1']] <- 'chr3R:14076593__T_C'
+SNP_list[['cisbp__M5172']] <- 'chr2R:18674001__T_A'
+SNP_list[['flyfactorsurvey__ttk-PA_SANGER_5_FBgn0003870']] <- 'chr3R:29376820'
+SNP_list <- sapply(SNP_list, function(x) SNPNames2GRanges(x))
+# Overlap with regions
+cisTopicObject <- readRDS('Figure_2/Processed_data/cisTopic/cisTopicObject.Rds')
+cisTopicObject@signatures <- list()
+cisTopicObject <- getSignaturesRegions(cisTopicObject, lapply(SNP_list, function (x) as.data.frame(x)), labels=names(SNP_list))
+pred.matrix <- predictiveDistribution(cisTopicObject)
+# Show accessibility of overlapping regions
+par(mfrow=c(2,2))
+RegionEnrichmentGreen(cisTopicObject, pred.matrix, cisTopicObject@signatures[['taipale__GRHL1_full_NAAACCGGTTTN']], 'cell', method='Z-score', coordinates='tSNE', thrP=0.6)
+RegionEnrichmentGreen(cisTopicObject, pred.matrix, cisTopicObject@signatures[['homer__GKVTCADRTTWC_Six1']], 'cell', method='Z-score', coordinates='tSNE', thrP=0.6)
+RegionEnrichmentGreen(cisTopicObject, pred.matrix, cisTopicObject@signatures[['cisbp__M5172']], 'cell', method='Z-score', coordinates='tSNE', thrP=0.2)
+RegionEnrichmentGreen(cisTopicObject, pred.matrix, cisTopicObject@signatures[['flyfactorsurvey__ttk-PA_SANGER_5_FBgn0003870']], 'cell', method='Z-score', coordinates='tSNE')
+```
