@@ -1,0 +1,233 @@
+---
+title: "Preprint: Bravo González-Blas et al., 2019; Figure 5 - GLM"
+author: "Carmen Bravo González-Blas"
+vignette: >
+  %\VignetteIndexEntry{Preprint: Bravo González-Blas et al., 2019, message=FALSE}
+  %\VignetteEngine{knitr::rmarkdown, message=FALSE}
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+    number_sections: false
+    df_print: paged
+  pdf_document:
+    toc: yes
+  html_notebook:
+    toc: yes
+---
+
+# 1. Clean peaks
+
+```{bash}
+# Remove repeats and chromosomes
+repeatsFile='Input_data/dm6_repeats.bed'
+peaksFile='Processed_data/EyeDisc_ATAC_50lines_mergedPeaks_39879.bed'
+outFile=${peaksFile%.bed}_noRepeats.bed
+cut -f1-3 $peaksFile > tmp_peaks.bed
+module load bedtools
+intersectBed -wa -v -f 0.25 \
+  -a tmp_peaks.bed \
+  -b $repeatsFile \
+  > $outFile
+wc -l $peaksFile
+# 39879
+wc -l $outFile
+# 38194
+rename '_39879_noRepeats' '_noRepeats_38194' $outFile
+ls `dirname ${outFile}`/*_noRepeats_*
+inFile='Processed_data/EyeDisc_ATAC_50lines_mergedPeaks_noRepeats_38194.bed'
+outFile=${inFile%_38194.bed}'_mainChrs.bed'
+cut -f1 $inFile | sort | uniq
+cat $inFile | grep -v chrUn_ | grep -v _random | grep -v chrM | cut -f1 | sort | uniq
+cat $inFile | grep -v chrUn_ | grep -v _random | grep -v chrM > $outFile
+wc -l $outFile
+# 38179
+rename '_mainChrs.bed' '_mainChrs_38179.bed' $outFile
+ls `dirname $outFile`/*_mainChrs*
+```
+
+```{r}
+countsMatFileName <- "Processed_data/EyeDisc_ATAC_50lines_mergedPeaks_39879.counts.RData"
+regions2keep <- "Processed_data/EyeDisc_ATAC_50lines_mergedPeaks_noRepeats_mainChrs_38179.bed"
+outFileName <- gsub("mergedPeaks_39879", "_mergedPeaks_noRepeats_mainChrs_38179", countsMatFileName)
+load(countsMatFileName)
+regions2keep <- read.table(regions2keep)
+regions2keep <- paste0(regions2keep[,1],":", regions2keep[,2], "-", regions2keep[,3])
+dim(countsMat)
+# 39879    50
+countsMat <- countsMat[regions2keep,]
+dim(countsMat)
+# 38179    50
+save(countsMat, file=outFileName)
+```
+
+# 2. Normalize and filter
+
+```{r}
+library("Biobase")
+library("DESeq2")
+library("edgeR")
+library("matrixStats")
+# Generated with featureCounts on bam files
+load("Processed_data/EyeDisc_ATAC_50lines_mergedPeaks_noRepeats_mainChrs_38179.counts.RData")
+region_size <- setNames(countsMat[,"Length"], rownames(countsMat))
+save(region_size, file="Processed_data/region_size.RData")
+countsMat <- countsMat[,which(!colnames(countsMat) %in% c("Chr", "Start", "End", "Strand", "Length"))]
+colDesign <- data.frame(row.names=colnames(countsMat), condition=colnames(countsMat))
+condition <- colDesign$condition
+dds <- DESeqDataSetFromMatrix(countData=countsMat , colData=colDesign, design= ~condition)
+colData(dds)$condition <- factor(colData(dds)$condition, levels=colnames(countsMat)) 
+dds <- estimateSizeFactors(dds)
+sf <- cbind(sizeFactors(dds))
+write.table(sf, file= "Processed_data/sizeFactors.txt", quote=F, sep="\t", col.names=F) # Not used
+countsMat_sfNorm <- t(t(countsMat) / sizeFactors(dds)[colnames(countsMat)])
+countsMat_sfNorm <- round(countsMat_sfNorm, digits=1)
+save(countsMat_sfNorm, file="Processed_data/countsMat_sfNorm.RData") # Count matrix available at GSE141573
+regionStats <- cbind(length=region_size[rownames(countsMat_sfNorm)]) 
+any(is.na(regionStats[,"length"]))
+regionStats <- cbind(regionStats, maxCounts=apply(countsMat_sfNorm, 1 ,max))
+regionStats <- cbind(regionStats, bestCoverage=regionStats[,"maxCounts"] / regionStats[,"length"])
+regionStats <- regionStats[which(regionStats[,"bestCoverage"]>.20),]
+countsMat_sfNorm_cofFilt <- countsMat_sfNorm[rownames(regionStats),]
+dim(countsMat_sfNorm_cofFilt)
+# 37990    50
+save(countsMat_sfNorm_cofFilt, file="Processed_data/countsMat_sfNorm_cov020_37990r.RData") 
+# Count matrix available at GSE141573
+# Save colnames (DGRP line) order for subsetting the VCF:
+dgrpLines <- colnames(countsMat_sfNorm_cofFilt)
+dgrpLines <- gsub("_IR", "", dgrpLines)
+dgrpLines <- gsub("_B", "", dgrpLines)
+write.table(dgrpLines, file="Processed_data/countsMat_sfNorm_cov020_37990r_DGRPlines.txt", sep="\t", col.names=FALSE, row.names=FALSE, quote=FALSE)
+splitRegionName <- function(x)
+{
+  x <- do.call(rbind,strsplit(x, ":"))
+  x <- cbind(x[,1], do.call(rbind,strsplit(x[,2], "-")))
+  colnames(x) <- c("#chrom", "start", "end")
+  x
+}
+countsMat_sfNorm_cofFilt <- cbind(splitRegionName(rownames(countsMat_sfNorm_cofFilt)), countsMat_sfNorm_cofFilt)
+write.table(countsMat_sfNorm_cofFilt, file="Processed_data/countsMat_sfNorm_cov020_37990r.bed", quote=F, sep="\t", row.names=FALSE) 
+write.table(countsMat_sfNorm_cofFilt[,1:3], file="Processed_data/regions_cov020_37990r.bed", quote=F, sep="\t", row.names=FALSE) 
+```
+
+# 3. VCF subset 
+
+```{bash}
+vcf_full='Input_data/dgrp2_dm6_bloomIDs.vcf' # Available at: ftp://ftp.hgsc.bcm.edu/DGRP/freeze2_Feb_2013/liftover_data_for_D.mel6.0_from_William_Gilks_Oct_2015/
+sampleNamesFile='Processed_data/countsMat_sfNorm_cov020_37990r_DGRPlines.txt'
+vcf_subset='Processed_data/vcf_50DGRPlines.vcf'
+module load VCFtools/0.1.14-foss-2014a
+vcftools --vcf $vcf_full \
+ --keep $sampleNamesFile \
+ --chr chr2L \
+ --chr chr2R \
+ --chr chr3L \
+ --chr chr3R \
+ --chr chr4 \
+ --chr chrX \
+ --remove-indels \
+ --recode --recode-INFO-all \
+ --stdout > $vcf_subset # | gzip -c
+module load BCFtools/1.5-foss-2014a
+bcftools view -H $vcf_subset | wc -l
+# 3963397
+grep -v '##contig=<ID=' $vcf_subset > ${vcf_subset%.vcf}'_noContigs.vcf'
+finalVcf=${vcf_subset%.vcf}'_noContigs.vcf'
+bcftools view $finalVcf -Oz -o $finalVcf.gz
+module load HTSlib/1.3.2-foss-2014a # tabix
+tabix -p vcf $finalVcf.gz
+outMatrix='Processed_data/vcf_50DGRPlines_asMatrix.txt'
+bcftools view -h $finalVcf | cut -f3,6,7,8,9 --complement | tail -1 > $outMatrix
+bcftools view -H $finalVcf | cut -f3,6,7,8,9 --complement >> $outMatrix
+```
+
+```{r}
+sampleOrder <- as.character(read.table("Processed_data/countsMat_sfNorm_cov020_37990r.bed", stringsAsFactors=F, nrows=1, comment.char="", sep="\t")[1,])
+sampleOrder <- gsub("_IR", "", sampleOrder)
+sampleOrder <- gsub("_B", "", sampleOrder)
+sampleOrder <- sampleOrder[-c(1:3)]
+sampleOrder
+library(data.table)
+vcf <- fread("Processed_data/vcf_50DGRPlines_asMatrix.txt")
+dim(vcf)
+# 3963397      54
+vcf <- data.table(vcf[,1], START=unlist(vcf[,2]-1), END=unlist(vcf[,2]), vcf[,c("REF", "ALT", sampleOrder),with=F])
+vcf[vcf=="./."] <- NA
+vcf[vcf=="0/0"] <- 0
+vcf[vcf=="1/1"] <- 1
+fwrite(vcf, file="Processed_data/vcf_50DGRPlines_asMatrix.txt", sep="\t", na="NA")
+```
+
+# 4. SNPs count matrix
+
+```{bash}
+snpsMatFile="Processed_data/vcf_50DGRPlines_asMatrix.txt"
+sfNormCountsFile='Processed_data/countsMat_sfNorm_cov020_37990r.bed' 
+outFile='Processed_data/glmInput_50dgrpLines_37990r.mat'
+module load bedtools/2.25.0-foss-2014a
+head -1 $sfNormCountsFile > tmp1.txt
+head -1 $snpsMatFile > tmp2.txt
+paste tmp1.txt tmp2.txt > $outFile
+rm tmp2.txt; rm tmp1.txt
+intersectBed -wb -wa \
+  -a $sfNormCountsFile \
+  -b $snpsMatFile \
+  >> $outFile
+```
+
+# 5. Generalized Linear Model
+
+```{r}
+library(data.table)
+mutreads <- fread("Processed_data/glmInput_50dgrpLines_37990r.mat",na.strings=c("NA"))
+mutreads <- as.data.frame(mutreads)
+colnames(mutreads) <- gsub("#","",colnames(mutreads))
+nSamples <- 50
+colnames(mutreads)[1:3] <- paste0("region_", colnames(mutreads)[1:3])
+colnames(mutreads)[(nSamples+4):ncol(mutreads)] <- paste0("SNP_", colnames(mutreads)[(nSamples+4):ncol(mutreads)])
+colnames(mutreads)
+countSamples <- colnames(mutreads)[4:(nSamples+3)]; length(countSamples)
+vcfSamples <- colnames(mutreads)[(nSamples+9):ncol(mutreads)]; length(vcfSamples)
+cbind(countSamples, vcfSamples)
+#### Remove the rows where there is no SNP (or all samples have the same SNP):
+notAllEqual <- apply(mutreads[,vcfSamples],1,function(x) length(unique(x[!is.na(x)])))
+mutreads <- mutreads[which(notAllEqual>1),]
+nrow(mutreads)
+# 456893
+save(mutreads, file="Processed_data/countsSNPmat_mutreads.RData")
+library(foreach); library(doParallel); library(doRNG)
+doParallel::registerDoParallel(); options(cores=40)
+resColnames <- c("Estimate", "Std. Error","t value","Pr(>|t|)")
+system.time(glmOut <- doRNG::"%dorng%"(foreach::foreach(i=1:nrow(mutreads), .combine=rbind),
+{
+  tryCatch({
+    SNPs <- unlist(mutreads[i,vcfSamples,drop=T])
+    model <- glm(unlist(mutreads[i,countSamples,drop=T]) ~ SNPs)
+    coefs <- summary.glm(model)$coefficients
+    ret <- c(unlist(mutreads[i,c("region_chrom", "region_start","region_end","SNP_CHROM", "SNP_START","SNP_END", "SNP_REF","SNP_ALT"),drop=TRUE]), setNames(rep(NA,4), resColnames))
+    if(nrow(coefs)>1) ret[resColnames] <- coefs["SNPs",resColnames]
+    ret
+  }, error = function(err) {
+    print(paste("error:  ", err, "i: ", i))
+    return(NULL)
+  })
+}))
+attr(glmOut, "rng") <- NULL
+rownames(glmOut) <- gsub("result.", "", rownames(glmOut))
+# As data.frame:
+tmp <- glmOut[,resColnames]; mode(tmp) <- "numeric"
+colnames(tmp) <- c("Estimate", "StdError", "tVal", "pVal")
+glmOut_df <- data.frame(glmOut[,1:8], tmp)
+head(glmOut_df)
+glmOut[,"SNP_START"] <- as.numeric(as.character(glmOut[,"SNP_START"]))
+glmOut[,"SNP_END"] <- as.numeric(as.character(glmOut[,"SNP_END"]))
+glmOut[,"region_start"] <- as.numeric(as.character(glmOut[,"region_start"]))
+glmOut[,"region_end"] <- as.numeric(as.character(glmOut[,"region_end"]))
+glmOut_df$nMuts <- apply(mutreads[,vcfSamples], 1, function(x) sum(x==1,na.rm=TRUE))
+glmOut_df$adjP <- p.adjust(as.numeric(glmOut_df[,"pVal"]), method="BH", n=nrow(glmOut_df))
+save(glmOut_df, file="Processed_data/glmOut_df_formatted.RData")#"glm.all.variants.e")
+glmOut_sorted <- glmOut_df[order(glmOut_df[,"pVal"], decreasing=FALSE),]
+colnames(glmOut_sorted)[which(colnames(glmOut_sorted) == "SNP_END")] <- "SNP"
+glmOut_sorted <- glmOut_sorted[,c("region_chrom", "region_start", "region_end", "SNP_CHROM", "SNP", "SNP_REF","SNP_ALT", "Estimate","pVal", "adjP", "nMuts")]
+save(glmOut_sorted, file="Processed_data/glmOut_sorted.RData")
+```

@@ -1,0 +1,207 @@
+---
+title: "Preprint: Bravo González-Blas et al., 2019; Figure 5 - Delta"
+author: "Carmen Bravo González-Blas"
+vignette: >
+  %\VignetteIndexEntry{Preprint: Bravo González-Blas et al., 2019, message=FALSE}
+  %\VignetteEngine{knitr::rmarkdown, message=FALSE}
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+    number_sections: false
+    df_print: paged
+  pdf_document:
+    toc: yes
+  html_notebook:
+    toc: yes
+---
+
+# 1. Select significant SNPs
+
+```{r}
+# Select significant regions/snps
+load("Processed_data/glmOut_sorted.RData")
+glm_signif <- glmOut_sorted[which(glmOut_sorted$adjP < 0.05),]; nrow(glm_signif)
+glm_notSignif <- glmOut_sorted[which(glmOut_sorted$adjP > 0.95),]; nrow(glm_notSignif)
+glm_signif <- glm_signif[order(glm_signif$pVal, decreasing=F),]
+rownames(glm_signif) <- NULL
+nrow(glm_signif)
+# 10969
+####################################################
+#### Signif SNPs (with dir: increase/decrease the peak)
+####################################################
+snps_signif_wDir <- split(glm_signif[,c("SNP_CHROM", "SNP", "SNP_REF", "SNP_ALT")], glm_signif$Estimate>0)
+snps_signif_Up <- snps_signif_wDir[["TRUE"]];  nrow(snps_signif_Up)
+# 6781
+snps_signif_Dw <- snps_signif_wDir[["FALSE"]]; nrow(snps_signif_Dw)
+# 4188
+write.table(snps_signif_Up, file="Processed_data/01_signifSnps_Up.txt", sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+write.table(snps_signif_Dw, file="Processed_data/01_signifSnps_Dw.txt", sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+snp2regions <- function(snps, extend=20)
+{
+  snps_regions <- cbind(snps, matrix(NA, ncol=3, nrow=nrow(snps), dimnames=list(c(NULL), c("chrom", "start", "end"))))
+  snps_regions[,"chrom"] <- snps_regions[,"SNP_CHROM"]
+  snps_regions[,"start"] <- snps_regions[,"SNP"]
+  snps_regions[,"end"] <- snps_regions[,"SNP"]
+  snps_regions <- unique(snps_regions)
+  snps_regions[,"start"] <- as.numeric(as.character(snps_regions[,"start"])) - extend
+  snps_regions[,"end"] <- as.numeric(as.character(snps_regions[,"end"])) + extend
+  rownames(snps_regions) <- paste0(snps_regions$SNP_CHROM, ":", snps_regions$SNP,"__", snps_regions$SNP_REF,"_", snps_regions$SNP_ALT)
+  snps_regions$region <- paste0(snps_regions$chrom,":", snps_regions$start, "-", snps_regions$end)
+  return(snps_regions)
+}
+snpsSignif_regions <- rbind(snps_signif_Up, snps_signif_Dw)
+snpsSignif_regions <- snp2regions(snpsSignif_regions, 20)
+snpsSignif_regions_txt <- snpsSignif_regions[,c("chrom", "start", "end")] ; head(snpsSignif_regions_txt)
+write.table(snpsSignif_regions_txt, file="Processed_data/signifSNPs_20pbAround.bed", sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+snpsSignif_regions <- snpsSignif_regions[,c("SNP_CHROM","SNP", "region")] ; head(snpsSignif_regions)
+saveRDS(snpsSignif_regions, file="Processed_data/signifSNPs_20pbAround.Rds")
+####################################################
+# Random SNPs & peaks
+####################################################
+suppressPackageStartupMessages(library(rtracklayer))
+snps <- paste0(glm_notSignif[,"SNP_CHROM"], ':', glm_notSignif[,"SNP"])
+names(snps) <- rownames(glm_notSignif)
+snps <- GRanges(snps)
+# Take  selected topics
+topicsPath <- "Input_data/TopicsAsBed"
+topicFiles <- setNames(file.path(topicsPath, list.files(topicsPath)), gsub(".bed", "", list.files(topicsPath), fixed=T))
+topics <- lapply(topicFiles, import, format="bed")
+topicNames <- paste0("Topic_", sort(as.numeric(gsub("Topic_", "", names(topics)))))
+topicLength <- apply(topics, nrow)
+seltopicNames <- paste0('Topic_', c(9,15,8,38,7,12,24,43,14,19,26,40,29,22,31,33,2,5,48))
+topics <- topics[seltopicNames]
+snpsPerTopic <- lapply(topics, function(topic) 
+{ 
+  queryRegions = topic
+  subjectRegions = snps
+  overlaps <- findOverlaps(queryRegions, subjectRegions,
+                           minoverlap=1,
+                           type="any", ignore.strand=TRUE)
+  subjectRegions[subjectHits(overlaps)]
+} )
+# Save random SNPs
+set.seed(123)
+randSNPsPerTopic <- lapply(1:length(snpsPerTopic), function (i) snps[which(snps %in% snpsPerTopic[[i]])])
+saveRDS(randSNPsPerTopic, file='Processed_data/randSNPsPerTopic_all.RDS')
+randSNPsPerTopic <- lapply(1:length(snpsPerTopic), function (i) names(snps)[which(snps %in% snpsPerTopic[[i]])])
+randRows <- unique(unlist(as.vector(randSNPsPerTopic)))
+snps_rand <- glm_notSignif[randRows,c("SNP_CHROM", "SNP", "SNP_REF", "SNP_ALT")]
+nrow(snps_rand)
+head(snps_rand)
+write.table(snps_rand, file="Processed_data/randomSnps.txt", sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+# Take regions around random SNPS
+snpsRand_regions <- snp2regions(snps_rand, 20)
+snpsRand_regions_txt <- snpsRand_regions[,c("chrom", "start", "end")] ; head(snpsRand_regions_txt)
+write.table(snpsRand_regions_txt, file="Processed_data/randomSNPs_20pbAround.bed", sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+snpsRand_regions <- snpsRand_regions[,c("SNP_CHROM","SNP", "region")]; head(snpsRand_regions)
+saveRDS(snpsRand_regions, file="Processed_data/snpsRand_20pbAround.Rds")
+```
+
+# 2. Get fasta files
+
+```{bash}
+fasta=$SAIBAR'Input_data/dmel-all-chromosome-r6.16_chrNames.fasta'
+#### Mutate fasta
+signifSnps_up='Processed_data/signifSnps_Up.txt'
+signifSnps_up_fasta=${signifSnps_up%.txt}_mutatedGenome.fasta
+seqtk mutfa $fasta ${signifSnps_up} > ${signifSnps_up_fasta}
+signifSnps_dw='Processed_data/signifSnps_Dw.txt'
+signifSnps_dw_fasta=${signifSnps_dw%.txt}_mutatedGenome.fasta
+seqtk mutfa $fasta ${signifSnps_dw} > ${signifSnps_dw_fasta}
+randomSnps='Processed_data/randomSnps.txt'
+randomSnps_fasta=${randomSnps%.txt}_mutatedGenome.fasta
+seqtk mutfa $fasta ${randomSnps} > ${randomSnps_fasta}
+#### Get peaks regions from fasta
+module load bedtools/2.25.0-foss-2014a
+module load SAMtools/1.2-foss-2014a
+samtools faidx ${signifSnps_up_fasta}
+samtools faidx ${signifSnps_dw_fasta}
+samtools faidx ${randomSnps_fasta}
+# Significant regions (snps splits into up-dw)
+regionsBed='Processed_data/signifSNPs_20pbAround.bed'
+sufix='__sequence20bpAroundSignifSNPs'
+bedtools getfasta -fi ${signifSnps_up_fasta} -bed $regionsBed -fo ${signifSnps_up_fasta%_mutatedGenome.fasta}${sufix}'.fa'
+bedtools getfasta -fi ${signifSnps_dw_fasta} -bed $regionsBed -fo ${signifSnps_dw_fasta%_mutatedGenome.fasta}${sufix}'.fa'
+# Random regions
+regionsRandomBed='Processed_data/randomSNPs_20pbAround.bed'
+sufix='__sequence20bpAroundRandomSNPs'
+bedtools getfasta -fi ${randomSnps_fasta} -bed $regionsRandomBed -fo ${randomSnps_fasta%_mutatedGenome.fasta}${sufix}.fa
+bedtools getfasta -fi $fasta -bed $regionsRandomBed -fo ${randomSnps_fasta%_mutatedGenome.fasta}${sufix}'.referenceSeq.fa'
+```
+
+# 3. Score motifs on regions
+
+```{bash}
+# Significant up
+module load Python/3.6.4-foss-2018a # Python 3.6
+module load Cluster-Buster/20180705-foss-2018a # Install cbust
+source /PRIME/bin/activate # Virtual environment
+SINGLETONS_FOLDER='/motif_collection_v9/singletons_md5' 
+SINGLETONS_LIST='singletonsList.txt' #List with the motifs you want to score
+FASTA='Figure_5/Processed_data/signifSnps_Up__sequence20bpAroundSignifSNPs.fa'
+PATH_TO_SAVE='Figure_5/Processed_data/'
+SCRIPT='Figure_6/Processed_data/aux_scripts/make_feature_table.py'
+PATH_TO_CBUST='/software/cbust/' # Add with -c parameter if needed
+time ${SCRIPT} -f ${FASTA} -M $SINGLETONS_FOLDER -m $SINGLETONS_LIST -o ${PATH_TO_SAVE}/${FASTA%.fa}_CRM.feather -t 20 -O 'feather'
+# Significant down
+FASTA='Figure_5/Processed_data/signifSnps_Dw__sequence20bpAroundSignifSNPs.fa'
+time ${SCRIPT} -f ${FASTA} -M $SINGLETONS_FOLDER -m $SINGLETONS_LIST -o ${PATH_TO_SAVE}/${FASTA%.fa}_CRM.feather -t 20 -O 'feather'
+# Random
+FASTA='Figure_5/Processed_data/randomSnps__sequence20bpAroundRandomSNPs.fa'
+time ${SCRIPT} -f ${FASTA} -M $SINGLETONS_FOLDER -m $SINGLETONS_LIST -o ${PATH_TO_SAVE}/${FASTA%.fa}_primeScoreMatrix -t 20
+```
+
+# 4. Format output
+
+```{r}
+library("feather"); library(tibble)
+readNheader <- function(matFile, motifAnnotFile="/motifCollection/v9/motifs_count_md5_to_motif_names.tsv")
+{
+  ### Corresponding motif name:
+  motifNames <- readLines(motifAnnotFile) # check if used v8 or v9
+  motifNames <- motifNames[-1]
+  motifNames <- sapply(motifNames, strsplit, "\t")
+  table(lengths(motifNames))
+  motifNames <- setNames(sapply(motifNames, function(x) x[2]), sapply(motifNames, function(x) x[1])) 
+  mat <- read_feather(matFile, columns = NULL)
+  colnames(mat)[2:ncol(mat)] <- unname(motifNames[colnames(mat)[2:ncol(mat)]])
+  if(any(is.na(colnames(mat))))  warning("missing motif names")
+  return(mat)
+}
+###############################################################################
+# Signif SNPs
+###############################################################################
+signifSNPS_up <- readNheader("Processed_data/signifSnps_Up__sequence20bpAroundSignifSNPs_primeScoreMatrix.feather")
+signifSNPS_dw <- readNheader("Processed_data/signifSnps_Dw__sequence20bpAroundSignifSNPs_primeScoreMatrix.feather")
+signifSNPS_delta <- signifSNPS_up[,-1] - signifSNPS_dw[,-1]
+# Rename region back to SNP
+SNPs_2region <- readRDS("Processed_data/signifSNPs_20pbAround.Rds")
+SNPs_2region <- setNames(rownames(SNPs_2region), SNPs_2region$region)
+deltaRowNames <- SNPs_2region[signifSNPS_up$index]; head(deltaRowNames)
+signifSNPS_delta <- add_column(signifSNPS_delta, SNP=deltaRowNames, .before = 1)
+dim(signifSNPS_delta)
+#  10969 24454
+saveRDS(signifSNPS_delta, file="Processed_data/signifSNPS_delta.Rds", compress=FALSE) 
+###############################################################################
+# Random SNPs
+###############################################################################
+randoms <- grep("feather",grep("randomSnps", list.files("Processed_data"), value=TRUE), value=T)
+randoms <- split(file.path("Processed_data",randoms), grepl("referenceSeq", randoms))
+names(randoms) <- c("snp", "ref")
+library(data.table); library(dplyr)
+randomSNPS_mut <- lapply(randoms$snp, readNheader)
+randomSNPS_mut <- bind_rows(randomSNPS_mut)
+randomSNPS_ref <- lapply(randoms$ref, readNheader)
+randomSNPS_ref <- bind_rows(randomSNPS_ref)
+randomSNPS_delta <- randomSNPS_mut[,-1] - randomSNPS_ref[,-1]
+# Rename region back to SNP
+SNPs_2region <- readRDS("Processed_data/snpsRand_20pbAround.Rds")
+SNPs_2region <- setNames(rownames(SNPs_2region), SNPs_2region$region)
+deltaRowNames <- SNPs_2region[randomSNPS_mut$index]; head(deltaRowNames)
+randomSNPS_delta <- add_column(randomSNPS_delta, SNP=deltaRowNames, .before = 1)
+randomSNPS_delta[1:5,1:5]
+dim(randomSNPS_delta)
+# 40081 24453
+saveRDS(randomSNPS_delta, file="Processed_data/randomSNPS_delta.Rds", compress=FALSE) 
+```
