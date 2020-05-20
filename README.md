@@ -1,8 +1,8 @@
 Repository containing the code for the manuscript  'Identification of genomic enhancers through spatial integration of single-cell transcriptomics and epigenomics' (Bravo et al., 2019-2020).
 
-### Preprint 
+### Manuscript
 
-[Bravo González-Blas, Carmen, et al. "Identification of genomic enhancers through spatial integration of single-cell transcriptomics and epigenomics." bioRxiv (2019).](https://www.biorxiv.org/content/10.1101/2019.12.19.882381v1)
+[Bravo González-Blas, Carmen, et al. "Identification of genomic enhancers through spatial integration of single-cell transcriptomics and epigenomics." Molecular Systems Biology (2020).](https://www.embopress.org/doi/10.15252/msb.20209438)
 
 ### Detailed vignettes per figure
 
@@ -12,6 +12,10 @@ Repository containing the code for the manuscript  'Identification of genomic en
 - [Figure 4](https://raw.githack.com/aertslab/Bravo_et_al_EyeAntennalDisc/0f35dff6226e168dbe85079f8356c197a5e9a489/Figure_4/Figure_4.html)
 - [Figure 5](https://raw.githack.com/aertslab/Bravo_et_al_EyeAntennalDisc/ba4919a56c2f92fe9924683d739f7700f65ebba2/Figure_5/Figure_5.html)
 - [Figure 6](https://raw.githack.com/aertslab/Bravo_et_al_EyeAntennalDisc/8408497d6c6b9e0d76ba9a5a3cc1592387a2a48d/Figure_6/Figure_6.html)
+
+### Preprint 
+
+[Bravo González-Blas, Carmen, et al. "Identification of genomic enhancers through spatial integration of single-cell transcriptomics and epigenomics." bioRxiv (2019).](https://www.biorxiv.org/content/10.1101/2019.12.19.882381v1)
 
 
 
